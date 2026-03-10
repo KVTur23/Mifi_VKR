@@ -61,11 +61,11 @@ def load_model_config(config_path: str) -> dict:
         project_root = config_path.parent.parent
         prompt_template = str(project_root / "prompts" / prompt_template)
 
-    return {
-        "model_name": config["model_name"],
-        "generation_params": config["generation_params"],
-        "prompt_template": prompt_template,
-    }
+    # Возвращаем весь конфиг целиком — разные этапы могут использовать
+    # свои дополнительные поля (system_prompt, use_unsloth, paraphrase_template и т.д.),
+    # и терять их нельзя
+    config["prompt_template"] = prompt_template
+    return config
 
 
 def load_prompt(prompt_path: str) -> str:
