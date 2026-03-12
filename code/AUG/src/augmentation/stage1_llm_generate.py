@@ -18,7 +18,6 @@ import random
 import argparse
 from pathlib import Path
 
-import torch
 import pandas as pd
 import numpy as np
 
@@ -82,11 +81,7 @@ def augment_class(
     system_prompt: str | None = None,
 ) -> list[str]:
     """
-    Генерирует новые тексты для одного класса по одному за вызов.
-
-    Генерируем по 1 письму за LLM-вызов — так модель не пытается продолжать
-    после разделителя и не добавляет мета-текст между письмами. Каждый результат
-    сразу проверяем валидацией. Если получили мало — повторяем.
+    Генерирует промпты и новые тексты для одного класса по одному за вызов.
 
     Аргументы:
         class_name:        название класса
@@ -116,14 +111,12 @@ def augment_class(
         if total_attempts % 5 == 1:
             print(f"  [Генерация] Нужно ещё {still_needed}, попыток: {total_attempts}/{max_total_attempts}")
 
-        # Один вызов → одно письмо: модель пишет письмо и естественно останавливается,
-        # без соблазна добавить мета-текст после разделителя
+        # Один вызов → одно письмо: модель пишет письмо и останавливается
         prompt = build_prompt(prompt_template, class_name, current_existing)
         raw_outputs = generate_text(model, tokenizer, prompt, generation_params, system_prompt=system_prompt)
-
+        
+        # Что бы цикл не падал при ошибке генерации
         if not raw_outputs or not raw_outputs[0].strip():
-            # Чистим CUDA-кэш — после OOM в памяти остаётся мусор от неудачной попытки
-            torch.cuda.empty_cache()
             continue
 
         # Берём первый (и единственный) результат как одно письмо
@@ -135,7 +128,7 @@ def augment_class(
         if valid:
             all_valid_texts.append(valid[0])
             current_existing.append(valid[0])
-        # Если не прошло валидацию — просто пробуем ещё раз с другим промптом
+        # Если не прошло валидацию — просто пробуем ещё раз 
 
     if len(all_valid_texts) < n_needed:
         print(f"  [Внимание] Класс «{class_name}»: удалось сгенерировать только "
@@ -180,13 +173,14 @@ def run(config_path: str) -> None:
     # --- Загрузка LLM ---
     model, tokenizer, generation_params, _, system_prompt = load_llm(config_path)
     # Этап 1 всегда использует промпт «1 письмо за вызов» — это ключевое условие:
-    # генерируем по одному письму, чтобы модель не добавляла мета-текст между письмами
+    # генерируем по одному письму, чтобы модель не добавляла мета-текст между письмами.
+    # Поле prompt_template из конфига здесь не используется — оно для других этапов/экспериментов
     prompt_template = load_prompt_template("llm_generate_one.txt")
 
     # --- Генерация по классам ---
     new_rows = []
 
-    for class_name, current_count in classes_to_augment.items():
+    for class_idx, (class_name, current_count) in enumerate(classes_to_augment.items()):
         n_needed = TARGET_COUNT - current_count
         existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
 
@@ -216,6 +210,12 @@ def run(config_path: str) -> None:
         if len(generated) != 0:
             for text in generated:
                 print(f"Пример сгенерированного письма:\n{'-'*50}\n{text}\n")
+
+        # Промежуточное сохранение каждые 3 класса — страховка от вылета ядра в Colab
+        if (class_idx + 1) % 3 == 0 and new_rows:
+            df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+            save_checkpoint(df_tmp, stage=STAGE)
+            print(f"[Этап 1] Промежуточное сохранение: {class_idx + 1} классов обработано, {len(df_tmp)} записей в файле")
 
     # --- Добавляем сгенерированные тексты к датасету ---
     if new_rows:

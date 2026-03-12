@@ -6,9 +6,8 @@ data_loader.py — Загрузка данных и работа с чекпои
 Этот модуль умеет подхватывать нужный чекпоинт, чтобы не прогонять
 уже пройденные этапы заново.
 
-Также здесь живут утилиты для анализа распределения классов —
-они нужны практически в каждом этапе, чтобы понять, каким классам
-ещё требуется аугментация.
+Также здесь утилиты для анализа распределения классов, 
+чтобы понять, каким классам ещё требуется аугментация.
 """
 
 import pandas as pd
@@ -29,8 +28,8 @@ STAGE_FILES = {
     0: "data_after_eda.csv",       # Исходный датасет после EDA
 }
 
-# Путь к папке с данными (относительно корня проекта)
-DATA_DIR = Path(__file__).parent.parent.parent / "Data"
+# Путь к папке с данными — Data/ лежит на уровне code/, а не AUG/
+DATA_DIR = Path(__file__).parent.parent.parent.parent / "Data"
 
 
 def load_dataset(stage: int, data_dir: str | Path | None = None) -> pd.DataFrame:
@@ -75,7 +74,7 @@ def load_dataset(stage: int, data_dir: str | Path | None = None) -> pd.DataFrame
                       f"({len(df)} записей)")
             return df
 
-    # Сюда попадём, только если вообще нет ни одного файла
+    # если вообще нет ни одного файла
     raise FileNotFoundError(
         f"Не найден ни один файл данных в {data_dir}. "
         f"Проверь, что data_after_eda.csv на месте"
@@ -84,7 +83,8 @@ def load_dataset(stage: int, data_dir: str | Path | None = None) -> pd.DataFrame
 
 def save_checkpoint(df: pd.DataFrame, stage: int, data_dir: str | Path | None = None) -> Path:
     """
-    Сохраняет датасет как чекпоинт после завершения этапа.
+    Сохраняет датасет как чекпоинт после завершения или во время этапа,
+    на случай падения ядра.
 
     Аргументы:
         df:       DataFrame для сохранения
@@ -109,9 +109,6 @@ def get_class_distribution(df: pd.DataFrame) -> pd.Series:
     """
     Считает, сколько примеров в каждом классе.
 
-    Возвращает Series: индекс — название класса, значение — количество.
-    Отсортировано по убыванию, чтобы сразу видеть, где густо, а где пусто.
-
     Аргументы:
         df: DataFrame с колонкой label
 
@@ -133,7 +130,6 @@ def get_classes_to_augment(
     в нём сейчас. В словарь попадают только классы, где количество
     примеров >= min_count и < max_count.
 
-    Это нужно, чтобы каждый этап работал только со «своими» классами:
     - Этап 1: min_count=0, max_count=15
     - Этап 2: min_count=0, max_count=35  (после этапа 1 все >= 15)
     - Этап 3: min_count=0, max_count=50  (после этапа 2 все >= 35)
@@ -161,8 +157,7 @@ def _validate_columns(df: pd.DataFrame, file_path: Path) -> None:
     """
     Проверяет, что в DataFrame есть обязательные колонки text и label.
 
-    Если колонок нет — падаем с понятной ошибкой, а не с загадочным KeyError
-    где-нибудь в середине пайплайна.
+    Если колонок нет — падаем с понятной ошибкой,  где-нибудь в середине пайплайна.
     """
     missing = []
     if TEXT_COL not in df.columns:

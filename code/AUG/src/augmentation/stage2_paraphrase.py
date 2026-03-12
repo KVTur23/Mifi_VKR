@@ -6,10 +6,6 @@ stage2_paraphrase.py — Этап 2: парафраз текстов через 
 оригинальный текст класса и просим LLM переформулировать его — другая структура
 предложений, синонимы, другой порядок, но тот же смысл.
 
-Ключевое отличие от этапа 1: там модель генерирует с нуля по примерам,
-а здесь — переделывает конкретный текст. Это даёт более контролируемый результат
-и лучше сохраняет стилистику класса.
-
 Вход:  Data/data_after_stage1.csv  (или data_after_stage2.csv, если чекпоинт есть)
 Выход: Data/data_after_stage2.csv
 
@@ -42,7 +38,7 @@ from src.utils.config_loader import load_model_config
 
 STAGE = 2
 TARGET_COUNT = 35       # Доводим каждый класс до 35 примеров
-MAX_RETRIES = 5         # Сколько раз пробуем перефразировать, если валидация отсеяла слишком много
+MAX_RETRIES = 10         # Сколько раз пробуем перефразировать, если валидация отсеяла слишком много
 PARAPHRASE_PROMPT = "paraphrase.txt"  # Промпт по умолчанию (для 7B+); для слабых моделей — из конфига
 
 
@@ -188,7 +184,6 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
 
     Распределяем равномерно: если оригиналов 15, а нужно 20 парафразов —
     каждый текст перефразируем по одному разу, потом оставшиеся 5 берём случайно.
-    Так разнообразие получается максимальным.
 
     Аргументы:
         existing_texts: список оригинальных текстов класса
@@ -266,7 +261,7 @@ def run(config_path: str) -> None:
     # --- Парафраз по классам ---
     new_rows = []
 
-    for class_name, current_count in classes_to_augment.items():
+    for class_idx, (class_name, current_count) in enumerate(classes_to_augment.items()):
         n_needed = TARGET_COUNT - current_count
         existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
 
@@ -296,6 +291,12 @@ def run(config_path: str) -> None:
         if len(generated) != 0:
             for text in generated:
                 print(f"Пример сгенерированного письма:\n{'-'*50}\n{text}\n")
+
+        # Промежуточное сохранение каждые 3 класса — страховка от вылета ядра
+        if (class_idx + 1) % 3 == 0 and new_rows:
+            df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+            save_checkpoint(df_tmp, stage=STAGE)
+            print(f"[Этап 2] Промежуточное сохранение: {class_idx + 1} классов обработано, {len(df_tmp)} записей в файле")
 
     # --- Добавляем перефразированные тексты к датасету ---
     if new_rows:

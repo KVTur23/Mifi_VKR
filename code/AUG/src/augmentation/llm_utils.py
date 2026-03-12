@@ -1,15 +1,13 @@
 """
 llm_utils.py — Универсальная обёртка для работы с LLM через HuggingFace
 
-Загружает любую causal LM модель по JSON-конфигу из configs/, генерирует текст
-по промпту. Используется в этапе 1 (LLM-генерация), но спроектирован так,
-чтобы работать с любой transformers-совместимой моделью — никаких хардкодов
-имён моделей.
+Загружает любую  LM модель по JSON-конфигу из configs/, генерирует текст
+по промпту. Используется в этапе 1 и 2, но спроектирован так,
+чтобы работать с любой transformers-совместимой моделью.
 
 Поддерживает:
 - автоматическое распределение по устройствам (device_map="auto")
 - chat-шаблоны для Instruct-моделей (Qwen, LLaMA-Chat и т.д.)
-- AWQ/GPTQ-модели (уже квантизованные, грузятся без bitsandbytes)
 - unsloth-модели (4-bit, экономят VRAM — включается флагом use_unsloth в конфиге)
 
 Вход:  путь до JSON-конфига модели
@@ -18,24 +16,26 @@ llm_utils.py — Универсальная обёртка для работы �
 
 import sys
 from pathlib import Path
-
+try:
+    import unsloth  # Unsloth должен быть импортирован до transformers
+except ImportError:
+    pass
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
 
 # Добавляем корень проекта в sys.path, чтобы импортировать утилиты
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-
 from src.utils.config_loader import load_model_config, load_prompt
+
 
 
 def load_llm(config_path: str) -> tuple:
     """
     Загружает LLM и токенизатор по JSON-конфигу.
 
-    Читает конфиг, скачивает (или подхватывает из кэша) модель с HuggingFace,
-    настраивает device_map. Для экономии VRAM используй уже квантизованные
-    модели (AWQ/GPTQ) — они загружаются без дополнительных зависимостей.
+    Читает конфиг, скачивает или забирает из кэша модель с HuggingFace. 
 
     Аргументы:
         config_path: путь до JSON-конфига (например, 'configs/model_qwen.json')
@@ -78,7 +78,7 @@ def load_llm(config_path: str) -> tuple:
         )
         model.eval()
 
-    # У некоторых моделей нет pad_token — без него batch-генерация падает
+    # Заглушка, у некоторых моделей нет pad_token — без него batch-генерация падает
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -146,6 +146,7 @@ def generate_text(
     # иначе получим его же в начале каждого ответа
     generated_texts = []
     for output in outputs:
+        #  срезает промпт и оставляет только новые токены
         generated_tokens = output[input_length:]
         text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
         if text:
@@ -158,8 +159,8 @@ def load_prompt_template(template_name: str) -> str:
     """
     Загружает шаблон промпта из папки prompts/.
 
-    Обёртка над config_loader.load_prompt — резолвит путь относительно
-    корня проекта, чтобы вызывающему коду не думать о путях.
+    Обёртка над config_loader.load_prompt —
+    Прописывает абсолютный путь до папки с промптом.
 
     Аргументы:
         template_name: имя файла промпта (например, 'llm_generate.txt')
@@ -184,8 +185,7 @@ def _format_prompt(tokenizer, prompt: str, system_prompt: str | None = None) -> 
     """
     Форматирует промпт под chat-шаблон модели, если он есть.
 
-    Instruct-модели (Qwen, LLaMA-Chat и т.д.) обучены на специальном формате
-    с ролями. Если передан system_prompt — кладём инструкции в role=system,
+    Если передан system_prompt — кладём инструкции в role=system,
     а задачу с примерами — в role=user. Так модель чётко видит границу
     между «что надо делать» и «вот данные для работы».
     """
@@ -201,7 +201,7 @@ def _format_prompt(tokenizer, prompt: str, system_prompt: str | None = None) -> 
                 add_generation_prompt=True,
             )
         except Exception:
-            # Если chat_template сломан — не страшно, просто используем сырой промпт
+            # Если chat_template в модели не предусмотрен, просто используем сырой промпт
             pass
 
     return prompt

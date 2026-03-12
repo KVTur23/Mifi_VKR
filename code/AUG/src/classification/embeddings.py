@@ -10,7 +10,7 @@ embeddings.py — Получение BERT-эмбеддингов для клас
 для каждого текста.
 
 Поддерживает кэширование в .npy файл — чтобы не пересчитывать эмбеддинги
-при каждом запуске классификатора (на ~2000 текстов это занимает пару минут).
+при каждом запуске классификатора.
 """
 
 import sys
@@ -33,7 +33,7 @@ from src.utils.data_loader import TEXT_COL, LABEL_COL
 
 SBERT_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"
 DEFAULT_BATCH_SIZE = 32    # Батч для encode — 32 хорошо ложится и на CPU, и на GPU
-CACHE_DIR = PROJECT_ROOT / "Data" / ".embeddings_cache"
+CACHE_DIR = PROJECT_ROOT.parent / "Data" / ".embeddings_cache"
 
 
 def load_embedding_model(model_name: str = SBERT_MODEL_NAME) -> SentenceTransformer:

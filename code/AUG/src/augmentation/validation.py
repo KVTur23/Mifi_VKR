@@ -1,21 +1,14 @@
 """
 validation.py — Валидация сгенерированных текстов после каждого этапа аугментации
 
-Каждый этап аугментации (LLM-генерация, парафраз, обратный перевод) порождает
-новые тексты. Не все из них годятся: бывают дубликаты, слишком похожие на оригинал,
-обрезанные, на другом языке или просто бессмысленные. Этот модуль прогоняет
-сгенерированные тексты через цепочку фильтров и оставляет только качественные.
-
-Проверки применяются только к НОВЫМ текстам — оригинальные данные не трогаем.
-
-Фильтры (в порядке применения):
+Фильтры:
 1. Точные дубликаты — убираем совпадения с существующими и между собой
 2. Короткие тексты — скорее всего мусор или обрезки
 3. Не русский язык — актуально после обратного перевода
 4. Вырожденные тексты — повторы слов, бессмыслица
-5. Косинусное сходство — слишком похожие на существующие (почти копии)
-
-Порядок важен: сначала дешёвые проверки (строки, regex), потом дорогие (эмбеддинги).
+5. Иностранные символы — тексты с CJK-иероглифами (японский, китайский, корейский)
+6. Промпт-утечка — LLM описала задание вместо того чтобы написать письмо
+7. Косинусное сходство — слишком похожие на существующие (почти копии)
 """
 
 import re
@@ -30,7 +23,7 @@ from langdetect import detect, LangDetectException
 SIMILARITY_THRESHOLD = 0.95  # Косинусное сходство выше этого — почти дубликат, отсеиваем
 MIN_TEXT_LENGTH = 20         # Короче 20 символов — скорее всего мусор или обрезанное письмо
 SBERT_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"  # Русскоязычная SBERT для эмбеддингов
-
+# можно заменить на ai-forever/ru-en-RoSBERTa 
 # Кэш модели на уровне модуля — грузим один раз, переиспользуем во всех вызовах
 _sbert_model = None
 
@@ -38,17 +31,13 @@ _sbert_model = None
 def get_sbert_model() -> SentenceTransformer:
     """
     Возвращает загруженную SBERT-модель, кэшируя её на уровне модуля.
-
-    Модель тяжёлая (~1.3 ГБ), поэтому грузим один раз — при первом вызове.
-    Все последующие вызовы получают уже загруженную модель из кэша.
-
     Возвращает:
         SentenceTransformer — готовая к кодированию модель
     """
     global _sbert_model
     if _sbert_model is None:
         print(f"[Валидация] Загружаю SBERT-модель: {SBERT_MODEL_NAME}")
-        # Грузим на CPU — GPU нужен для LLM, а для косинусного сходства CPU вполне хватает
+        # Грузим на CPU — GPU нужен для LLM, а для косинусного сходства CPU хватает
         _sbert_model = SentenceTransformer(SBERT_MODEL_NAME, device="cpu")
         print("[Валидация] SBERT-модель загружена (CPU)")
     return _sbert_model
@@ -65,10 +54,6 @@ def validate_generated_texts(
     """
     Главная функция — прогоняет новые тексты через все фильтры.
 
-    Принимает список сгенерированных текстов и список уже имеющихся
-    в датасете для этого класса. Возвращает только те, что прошли все
-    проверки. Порядок фильтров: от дешёвых к дорогим, чтобы не гонять
-    эмбеддинги для явного мусора.
 
     Аргументы:
         new_texts:             список сгенерированных текстов
@@ -94,9 +79,10 @@ def validate_generated_texts(
     texts = filter_short_texts(texts, class_name, min_length=min_length)
     texts = filter_non_russian(texts, class_name)
     texts = filter_degenerate(texts, class_name)
+    texts = filter_foreign_scripts(texts, class_name)
+    texts = filter_prompt_leak(texts, class_name)
 
-    # Косинусное сходство — самая тяжёлая проверка, поэтому в конце,
-    # когда явный мусор уже отсеян
+    # Косинусное сходство 
     if texts and existing_texts:
         if sbert_model is None:
             sbert_model = get_sbert_model()
@@ -125,8 +111,7 @@ def remove_exact_duplicates(
     """
     Убирает точные дубликаты: совпадения с существующими текстами и между собой.
 
-    Сравниваем по нормализованному тексту (strip + lower), чтобы не пропустить
-    дубликаты, отличающиеся только регистром или пробелами по краям.
+    Сравниваем по нормализованному тексту (strip + lower).
 
     Аргументы:
         new_texts:      сгенерированные тексты
@@ -157,56 +142,6 @@ def remove_exact_duplicates(
     return unique_texts
 
 
-def filter_by_cosine_similarity(
-    new_texts: list[str],
-    existing_texts: list[str],
-    class_name: str,
-    sbert_model: SentenceTransformer,
-    threshold: float = SIMILARITY_THRESHOLD,
-) -> list[str]:
-    """
-    Отсеивает тексты, слишком похожие на уже существующие.
-
-    Считаем эмбеддинги через SBERT, затем для каждого нового текста находим
-    максимальное косинусное сходство с любым существующим. Если выше порога —
-    текст почти дубликат, он не добавит разнообразия в обучающую выборку.
-
-    Аргументы:
-        new_texts:      сгенерированные тексты (уже без точных дубликатов)
-        existing_texts: тексты этого класса в датасете
-        class_name:     название класса (для логов)
-        sbert_model:    загруженная SBERT-модель
-        threshold:      порог сходства (по умолчанию 0.95)
-
-    Возвращает:
-        Список текстов с косинусным сходством ниже порога
-    """
-    if not new_texts or not existing_texts:
-        return new_texts
-
-    # Кодируем все тексты разом — так быстрее, чем по одному
-    new_embeddings = sbert_model.encode(new_texts, show_progress_bar=False)
-    existing_embeddings = sbert_model.encode(existing_texts, show_progress_bar=False)
-
-    # Матрица сходства: [новые x существующие]
-    sim_matrix = cosine_similarity(new_embeddings, existing_embeddings)
-
-    # Для каждого нового текста берём максимальное сходство с любым существующим
-    max_similarities = np.max(sim_matrix, axis=1)
-
-    filtered = []
-    for i, text in enumerate(new_texts):
-        if max_similarities[i] < threshold:
-            filtered.append(text)
-
-    removed = len(new_texts) - len(filtered)
-    if removed > 0:
-        print(f"  [Сходство] Класс «{class_name}»: отсеяно {removed} текстов "
-              f"(косинусное сходство > {threshold})")
-
-    return filtered
-
-
 def filter_short_texts(
     texts: list[str],
     class_name: str,
@@ -214,9 +149,6 @@ def filter_short_texts(
 ) -> list[str]:
     """
     Убирает слишком короткие тексты.
-
-    Если модель сгенерировала что-то короче min_length символов — это, скорее всего,
-    обрезанный текст, заглушка или мусор. Нормальное деловое письмо так не выглядит.
 
     Аргументы:
         texts:      список текстов для проверки
@@ -243,9 +175,7 @@ def filter_non_russian(
     """
     Проверяет, что текст написан на русском языке.
 
-    Особенно актуально после обратного перевода (RU → EN → RU) — иногда
-    обратный перевод может вернуть текст на английском или смешанный.
-    Используем langdetect, он неплохо справляется с определением языка.
+    Используем langdetect.
 
     Аргументы:
         texts:      список текстов для проверки
@@ -281,11 +211,6 @@ def filter_degenerate(
 ) -> list[str]:
     """
     Отсеивает вырожденные тексты: бессмысленные повторы, зацикливания модели.
-
-    LLM иногда зацикливается и начинает повторять одно и то же слово или фразу.
-    Такие тексты бесполезны для обучения. Проверяем два признака:
-    1. Доля уникальных слов слишком низкая (модель повторяет одно и то же)
-    2. Есть подряд идущие повторы одной фразы
 
     Аргументы:
         texts:      список текстов для проверки
@@ -336,3 +261,127 @@ def _is_degenerate(text: str) -> bool:
         return True
 
     return False
+
+
+# CJK-диапазоны: китайский, японский (хирагана + катакана), корейский
+_FOREIGN_SCRIPTS_RE = re.compile(
+    r"[\u4e00-\u9fff"    # CJK Unified Ideographs (китайский)
+    r"\u3040-\u309f"     # Хирагана (японский)
+    r"\u30a0-\u30ff"     # Катакана (японский)
+    r"\uac00-\ud7af]"    # Хангыль (корейский)
+)
+
+
+def filter_foreign_scripts(
+    texts: list[str],
+    class_name: str,
+) -> list[str]:
+    """
+    Отсеивает тексты, содержащие иероглифы CJK (китайский, японский, корейский).
+
+    Иногда qwen генерирует такое
+
+    Аргументы:
+        texts:      список текстов для проверки
+        class_name: название класса (для логов)
+
+    Возвращает:
+        Список текстов без иностранных иероглифов
+    """
+    filtered = [t for t in texts if not _FOREIGN_SCRIPTS_RE.search(t)]
+
+    removed = len(texts) - len(filtered)
+    if removed > 0:
+        print(f"  [Иноязычные символы] Класс «{class_name}»: отсеяно {removed} текстов "
+              f"(содержат иероглифы)")
+
+    return filtered
+
+
+# Слова-маркеры промпт-утечки — LLM начинает текст с мета-описания вместо письма.
+_PROMPT_LEAK_MARKERS = [
+    "конечно,",
+    "генерирую",
+    "вот несколько",
+    "вот примеры",
+    "вот образцы",
+    "несколько примеров",
+    "пример письма:",
+]
+
+
+def filter_prompt_leak(
+    texts: list[str],
+    class_name: str,
+) -> list[str]:
+    """
+    Отсеивает тексты, где LLM описала своё задание вместо письма.
+
+    Проверяем только начало текста (первые 150 символов) — утечка всегда там.
+
+    Аргументы:
+        texts:      список текстов для проверки
+        class_name: название класса (для логов)
+
+    Возвращает:
+        Список текстов без признаков промпт-утечки
+    """
+    def is_leak(text: str) -> bool:
+        start = text.strip()[:150].lower()
+        return any(marker in start for marker in _PROMPT_LEAK_MARKERS)
+
+    filtered = [t for t in texts if not is_leak(t)]
+
+    removed = len(texts) - len(filtered)
+    if removed > 0:
+        print(f"  [Промпт-утечка] Класс «{class_name}»: отсеяно {removed} текстов "
+              f"(LLM описала задание вместо письма)")
+
+    return filtered
+
+
+def filter_by_cosine_similarity(
+    new_texts: list[str],
+    existing_texts: list[str],
+    class_name: str,
+    sbert_model: SentenceTransformer,
+    threshold: float = SIMILARITY_THRESHOLD,
+) -> list[str]:
+    """
+    Отсеивает тексты, слишком похожие на уже существующие.
+
+
+    Аргументы:
+        new_texts:      сгенерированные тексты (уже без точных дубликатов)
+        existing_texts: тексты этого класса в датасете
+        class_name:     название класса (для логов)
+        sbert_model:    загруженная SBERT-модель
+        threshold:      порог сходства (по умолчанию 0.95)
+
+    Возвращает:
+        Список текстов с косинусным сходством ниже порога
+    """
+    if not new_texts or not existing_texts:
+        return new_texts
+
+    # Кодируем все тексты разом — так быстрее, чем по одному
+    new_embeddings = sbert_model.encode(new_texts, show_progress_bar=False)
+    existing_embeddings = sbert_model.encode(existing_texts, show_progress_bar=False)
+
+    # Матрица сходства: [новые x существующие]
+    sim_matrix = cosine_similarity(new_embeddings, existing_embeddings)
+
+    # Для каждого нового текста берём максимальное сходство с любым существующим
+    max_similarities = np.max(sim_matrix, axis=1)
+
+    filtered = []
+    for i, text in enumerate(new_texts):
+        if max_similarities[i] < threshold:
+            filtered.append(text)
+
+    removed = len(new_texts) - len(filtered)
+    if removed > 0:
+        print(f"  [Сходство] Класс «{class_name}»: отсеяно {removed} текстов "
+              f"(косинусное сходство > {threshold})")
+
+    return filtered
