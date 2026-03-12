@@ -1,8 +1,9 @@
 # AUG — Аугментация датасета для классификации писем
 
-Пайплайн аугментации несбалансированного датасета входящих писем (36 классов, русский язык). Часть ВКР по многоклассовой классификации текстов.
+Пайплайн аугментации несбалансированного датасета входящих писем.
 
-Исходный датасет (~1700 писем) сильно несбалансирован: от 2 до 200+ примеров на класс. Три этапа аугментации доводят каждый класс до минимум 50 примеров, после чего baseline-модели оценивают эффект.
+Исходный датасет (~1700 писем) сильно несбалансирован: от 2 до 200+ примеров на класс.
+Три этапа аугментации доводят каждый класс до минимум 50 примеров, после чего baseline-модели оценивают эффект.
 
 ## Структура
 
@@ -26,10 +27,12 @@ AUG/
 │   │   ├── validation.py              #   7 фильтров для сгенерированных текстов
 │   │   └── llm_utils.py               #   Обёртка для HuggingFace LLM
 │   ├── classification/
+│   │   ├── evaluate.py                #   Общая логика оценки классификаторов
 │   │   ├── embeddings.py              #   SBERT-эмбеддинги с кэшированием
 │   │   ├── run_svm.py                 #   Baseline: LinearSVC
 │   │   ├── run_logreg.py              #   Baseline: LogisticRegression
-│   │   └── run_naive_bayes.py         #   Baseline: GaussianNB
+│   │   ├── run_naive_bayes.py         #   Baseline: GaussianNB
+│   │   └── run_random_forest.py       #   Baseline: RandomForest
 │   ├── utils/
 │   │   ├── data_loader.py             #   Загрузка данных и чекпоинты
 │   │   └── config_loader.py           #   Парсинг JSON-конфигов
@@ -93,7 +96,7 @@ Data/
 
 ---
 
-## Конфиги моделей
+## Конфигурация моделей
 
 Каждая модель — отдельный JSON в `configs/`. Основные поля:
 
@@ -108,13 +111,14 @@ Data/
 
 ## Классификация
 
-Три baseline-модели для оценки качества аугментации. Общий пайплайн: SBERT-эмбеддинги → GridSearchCV с StratifiedKFold(k=5) → accuracy, macro/weighted F1.
+Baseline-модели для оценки качества аугментации. Общая логика вынесена в `evaluate.py`: SBERT-эмбеддинги → GridSearchCV (если есть параметры) → StratifiedKFold(k=5) → classification report через `cross_val_predict`.
 
 | Модуль | Модель |
 |--------|--------|
 | `run_svm.py` | LinearSVC |
 | `run_logreg.py` | LogisticRegression |
 | `run_naive_bayes.py` | GaussianNB |
+| `run_random_forest.py` | RandomForestClassifier |
 
 ---
 
@@ -133,6 +137,7 @@ python src/augmentation/stage3_back_translation.py
 python src/classification/run_svm.py
 python src/classification/run_logreg.py
 python src/classification/run_naive_bayes.py
+python src/classification/run_random_forest.py
 ```
 
 Для Google Colab — `src/augmentation_main.ipynb`.
