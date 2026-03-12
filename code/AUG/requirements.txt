@@ -1,0 +1,12 @@
+transformers>=4.40.0        # Загрузка и инференс моделей с HuggingFace
+torch>=2.1.0                # Бэкенд для transformers
+accelerate>=0.27.0          # Ускорение загрузки больших моделей (device_map="auto")
+sentencepiece>=0.1.99       # Токенизатор для некоторых моделей (Qwen, LLaMA и др.)
+unsloth                     # Оптимизированная 4-bit загрузка моделей (14B влезает в T4)
+sentence-transformers>=2.6.0  # SBERT-модели для эмбеддингов (ai-forever/sbert_large_nlu_ru)
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0         # SVM, LogReg, NaiveBayes, кросс-валидация, метрики
+langdetect>=1.0.9           # Определение языка текста (фильтр после обратного перевода)
+tqdm>=4.65.0                # Прогресс-бары для долгих операций
+ 
