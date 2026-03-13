@@ -55,6 +55,11 @@ def evaluate_model(name: str, estimator, param_grid: dict | None = None) -> None
 
     cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_SEED)
 
+    # Если estimator сам использует n_jobs (например, RandomForest),
+    # параллелизм на уровне CV отключаем, чтобы не убить память
+    estimator_uses_parallel = getattr(estimator, "n_jobs", None) not in (None, 1)
+    cv_n_jobs = 1 if estimator_uses_parallel else -1
+
     # --- Подбор гиперпараметров (если есть) ---
     if param_grid:
         print(f"\n[{name}] GridSearchCV ({CV_FOLDS} фолдов), параметры: {param_grid}")
@@ -64,7 +69,7 @@ def evaluate_model(name: str, estimator, param_grid: dict | None = None) -> None
             param_grid=param_grid,
             cv=cv,
             scoring="f1_macro",
-            n_jobs=-1,
+            n_jobs=cv_n_jobs,
         )
         grid.fit(X, y)
 
@@ -82,7 +87,7 @@ def evaluate_model(name: str, estimator, param_grid: dict | None = None) -> None
     scoring = {"accuracy": "accuracy", "f1_macro": "f1_macro", "f1_weighted": "f1_weighted"}
 
     cv_results = cross_validate(
-        estimator, X, y, cv=cv, scoring=scoring, n_jobs=-1,
+        estimator, X, y, cv=cv, scoring=scoring, n_jobs=cv_n_jobs,
     )
 
     print(f"\n{'Метрика':<20} {'Среднее':>10} {'Std':>10}")
@@ -94,7 +99,7 @@ def evaluate_model(name: str, estimator, param_grid: dict | None = None) -> None
         print(f"  {label:<18} {s.mean():>10.4f} {s.std():>10.4f}")
 
     # --- Classification report (честный, через cross_val_predict) ---
-    y_pred = cross_val_predict(estimator, X, y, cv=cv, n_jobs=-1)
+    y_pred = cross_val_predict(estimator, X, y, cv=cv, n_jobs=cv_n_jobs)
     print(f"\n[{name}] Classification report (cross-validated):")
     print(classification_report(y, y_pred, target_names=le.classes_, zero_division=0))
 
