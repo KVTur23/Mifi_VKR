@@ -39,6 +39,7 @@ from src.utils.config_loader import load_model_config
 STAGE = 2
 TARGET_COUNT = 35       # Доводим каждый класс до 35 примеров
 MAX_RETRIES = 10         # Сколько раз пробуем перефразировать, если валидация отсеяла слишком много
+BATCH_SIZE = 20          # Сколько парафразов генерировать за одну попытку (лишние отсеются валидацией)
 PARAPHRASE_PROMPT = "paraphrase.txt"  # Промпт по умолчанию (для 7B+); для слабых моделей — из конфига
 
 
@@ -138,11 +139,13 @@ def augment_class(
         if still_needed <= 0:
             break
 
-        print(f"  [Попытка {attempt}/{MAX_RETRIES}] Нужно ещё {still_needed} парафразов")
+        # Генерируем с запасом на отсев валидации (+50%), но не больше BATCH_SIZE
+        batch = min(BATCH_SIZE, max(still_needed, int(still_needed * 1.5)))
+        print(f"  [Попытка {attempt}/{MAX_RETRIES}] Нужно ещё {still_needed}, генерируем {batch}")
 
         # Выбираем оригиналы для перефразирования — равномерно по кругу,
         # чтобы не перефразировать один и тот же текст десять раз подряд
-        sources = _select_sources(existing_texts, still_needed)
+        sources = _select_sources(existing_texts, batch)
 
         # Перефразируем каждый выбранный текст
         paraphrased = []

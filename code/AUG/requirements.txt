@@ -1,4 +1,4 @@
-transformers>=4.40.0        # Загрузка и инференс моделей с HuggingFace
+transformers==5.2.0          # Загрузка и инференс моделей с HuggingFace
 torch>=2.1.0                # Бэкенд для transformers
 accelerate>=0.27.0          # Ускорение загрузки больших моделей (device_map="auto")
 sentencepiece>=0.1.99       # Токенизатор для некоторых моделей (Qwen, LLaMA и др.)

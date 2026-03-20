@@ -45,15 +45,19 @@ AUG/
 
 ```
 Data/
-├── data_after_eda.csv       # Исходный датасет
-├── data_after_stage1.csv    # После этапа 1 (≥ 15)
-├── data_after_stage2.csv    # После этапа 2 (≥ 35)
-└── data_after_stage3.csv    # После этапа 3 (≥ 50)
+├── data_after_eda.csv       # Оригинальный датасет (не трогается)
+├── train_after_eda.csv      # Train-часть (после разбиения)
+├── data_test.csv            # Test-часть (не аугментируется)
+├── data_after_stage1.csv    # Train после этапа 1 (≥ 15)
+├── data_after_stage2.csv    # Train после этапа 2 (≥ 35)
+└── data_after_stage3.csv    # Train после этапа 3 (≥ 50)
 ```
 
 ---
 
-## Пайплайн аугментации
+## Пайплайн
+
+Перед аугментацией данные разбиваются на train/test (80/20, стратифицированно). Аугментируется только train, оценка — на test.
 
 | Группа | Примеров | Цель | Метод |
 |--------|----------|------|-------|
@@ -111,7 +115,7 @@ Data/
 
 ## Классификация
 
-Baseline-модели для оценки качества аугментации. Общая логика вынесена в `evaluate.py`: SBERT-эмбеддинги → GridSearchCV (если есть параметры) → StratifiedKFold(k=5) → classification report через `cross_val_predict`.
+Baseline-модели для оценки качества аугментации. Обучение на аугментированном train, оценка на отложенном test. Общая логика в `evaluate.py`: SBERT-эмбеддинги → GridSearchCV на train (если есть параметры) → метрики на test.
 
 | Модуль | Модель |
 |--------|--------|

@@ -1,5 +1,7 @@
 Класс: «{class_name}»
 
+Характеристика: {context}
+
 Примеры:
 {examples}
 
