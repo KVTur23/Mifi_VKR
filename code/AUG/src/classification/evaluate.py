@@ -1,8 +1,8 @@
 """
 evaluate.py — Оценка классификаторов на тестовой выборке
 
-Загружает train (аугментированный) и test, обучает модель,
-выводит метрики на тесте.
+Загружает train (аугментированный) и test, строит TF-IDF признаки,
+обучает модель, выводит метрики на тесте.
 """
 
 import sys
@@ -17,14 +17,14 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.utils.data_loader import load_dataset, load_test_set, RANDOM_SEED
-from src.classification.embeddings import load_embedding_model, prepare_features
+from src.classification.embeddings import prepare_features
 
 STAGE = 3
 
 
 def load_data():
     """
-    Загружает train/test и возвращает эмбеддинги + метки.
+    Загружает train/test и возвращает TF-IDF признаки + метки.
 
     Возвращает:
         (X_train, y_train, X_test, y_test, label_names)
@@ -32,9 +32,7 @@ def load_data():
     df_train = load_dataset(stage=STAGE)
     df_test = load_test_set()
 
-    sbert = load_embedding_model()
-    X_train, y_train_raw = prepare_features(df_train, sbert)
-    X_test, y_test_raw = prepare_features(df_test, sbert, use_cache=False)
+    X_train, y_train_raw, X_test, y_test_raw = prepare_features(df_train, df_test)
 
     le = LabelEncoder()
     y_train = le.fit_transform(y_train_raw)

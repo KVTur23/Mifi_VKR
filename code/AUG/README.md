@@ -28,11 +28,10 @@ AUG/
 │   │   └── llm_utils.py               #   Обёртка для HuggingFace LLM
 │   ├── classification/
 │   │   ├── evaluate.py                #   Общая логика оценки классификаторов
-│   │   ├── embeddings.py              #   SBERT-эмбеддинги с кэшированием
+│   │   ├── embeddings.py              #   TF-IDF признаки с кэшированием
 │   │   ├── run_svm.py                 #   Baseline: LinearSVC
 │   │   ├── run_logreg.py              #   Baseline: LogisticRegression
-│   │   ├── run_naive_bayes.py         #   Baseline: GaussianNB
-│   │   └── run_random_forest.py       #   Baseline: RandomForest
+│   │   └── run_naive_bayes.py         #   Baseline: MultinomialNB
 │   ├── utils/
 │   │   ├── data_loader.py             #   Загрузка данных и чекпоинты
 │   │   └── config_loader.py           #   Парсинг JSON-конфигов
@@ -115,14 +114,13 @@ Data/
 
 ## Классификация
 
-Baseline-модели для оценки качества аугментации. Обучение на аугментированном train, оценка на отложенном test. Общая логика в `evaluate.py`: SBERT-эмбеддинги → GridSearchCV на train (если есть параметры) → метрики на test.
+Baseline-модели для оценки качества аугментации. Обучение на аугментированном train, оценка на отложенном test. Общая логика в `evaluate.py`: TF-IDF → GridSearchCV на train (если есть параметры) → метрики на test.
 
 | Модуль | Модель |
 |--------|--------|
 | `run_svm.py` | LinearSVC |
 | `run_logreg.py` | LogisticRegression |
-| `run_naive_bayes.py` | GaussianNB |
-| `run_random_forest.py` | RandomForestClassifier |
+| `run_naive_bayes.py` | MultinomialNB |
 
 ---
 
@@ -141,7 +139,6 @@ python src/augmentation/stage3_back_translation.py
 python src/classification/run_svm.py
 python src/classification/run_logreg.py
 python src/classification/run_naive_bayes.py
-python src/classification/run_random_forest.py
 ```
 
 Для Google Colab — `src/augmentation_main.ipynb`.
