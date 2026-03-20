@@ -1,106 +1,92 @@
 """
-evaluate.py — Общая логика оценки baseline-классификаторов
+evaluate.py — Оценка классификаторов на тестовой выборке
 
-Загружает данные, подбирает гиперпараметры (если есть),
-прогоняет кросс-валидацию и выводит метрики + classification report.
+Загружает train (аугментированный) и test, обучает модель,
+выводит метрики на тесте.
 """
 
 import sys
 from pathlib import Path
 
 import numpy as np
-from sklearn.model_selection import (
-    StratifiedKFold,
-    GridSearchCV,
-    cross_validate,
-    cross_val_predict,
-)
-from sklearn.metrics import classification_report
+from sklearn.model_selection import StratifiedKFold, GridSearchCV
+from sklearn.metrics import accuracy_score, f1_score, classification_report
 from sklearn.preprocessing import LabelEncoder
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.utils.data_loader import load_dataset, RANDOM_SEED
+from src.utils.data_loader import load_dataset, load_test_set, RANDOM_SEED
 from src.classification.embeddings import load_embedding_model, prepare_features
 
 STAGE = 3
-CV_FOLDS = 5
 
 
-def evaluate_model(name: str, estimator, param_grid: dict | None = None) -> None:
+def load_data():
     """
-    Единый пайплайн оценки классификатора.
+    Загружает train/test и возвращает эмбеддинги + метки.
 
-    Аргументы:
-        name:        название модели для вывода (например, "SVM")
-        estimator:   sklearn-модель (уже с нужными параметрами кроме тех, что в param_grid)
-        param_grid:  сетка для GridSearchCV (например, {"C": [0.01, 0.1, 1, 10]}).
-                     Если None — просто кросс-валидация без подбора.
+    Возвращает:
+        (X_train, y_train, X_test, y_test, label_names)
+    """
+    df_train = load_dataset(stage=STAGE)
+    df_test = load_test_set()
+
+    sbert = load_embedding_model()
+    X_train, y_train_raw = prepare_features(df_train, sbert)
+    X_test, y_test_raw = prepare_features(df_test, sbert, use_cache=False)
+
+    le = LabelEncoder()
+    y_train = le.fit_transform(y_train_raw)
+    y_test = le.transform(y_test_raw)
+
+    return X_train, y_train, X_test, y_test, le.classes_
+
+
+def evaluate_model(
+    name: str,
+    estimator,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    label_names,
+    param_grid: dict | None = None,
+) -> None:
+    """
+    Обучает модель на train, оценивает на test.
+
+    Если передан param_grid — подбирает параметры через GridSearchCV на train.
     """
     print("=" * 60)
     print(f"КЛАССИФИКАЦИЯ: {name}")
     print("=" * 60)
+    print(f"[{name}] Train: {len(y_train)}, Test: {len(y_test)}, "
+          f"Классов: {len(label_names)}")
 
-    # --- Данные ---
-    df = load_dataset(stage=STAGE)
-    model = load_embedding_model()
-    X, y_raw = prepare_features(df, model)
-
-    le = LabelEncoder()
-    y = le.fit_transform(y_raw)
-
-    print(f"\n[{name}] Датасет: {X.shape[0]} примеров, {X.shape[1]} фичей, "
-          f"{len(le.classes_)} классов")
-
-    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_SEED)
-
-    # Если estimator сам использует n_jobs (например, RandomForest),
-    # параллелизм на уровне CV отключаем, чтобы не убить память
-    estimator_uses_parallel = getattr(estimator, "n_jobs", None) not in (None, 1)
-    cv_n_jobs = 1 if estimator_uses_parallel else -1
-
-    # --- Подбор гиперпараметров (если есть) ---
+    # Подбор гиперпараметров на train
     if param_grid:
-        print(f"\n[{name}] GridSearchCV ({CV_FOLDS} фолдов), параметры: {param_grid}")
-
+        cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_SEED)
         grid = GridSearchCV(
-            estimator=estimator,
-            param_grid=param_grid,
-            cv=cv,
-            scoring="f1_macro",
-            n_jobs=cv_n_jobs,
+            estimator, param_grid, cv=cv,
+            scoring="f1_macro", n_jobs=1,
         )
-        grid.fit(X, y)
-
+        grid.fit(X_train, y_train)
         print(f"[{name}] Лучшие параметры: {grid.best_params_} "
-              f"(macro F1 = {grid.best_score_:.4f})")
-
-        for score, params in zip(grid.cv_results_["mean_test_score"],
-                                  grid.cv_results_["params"]):
-            print(f"  {params} → macro F1 = {score:.4f}")
-
-        # Обновляем estimator лучшими параметрами
+              f"(CV macro F1 = {grid.best_score_:.4f})")
         estimator = grid.best_estimator_
+    else:
+        estimator.fit(X_train, y_train)
 
-    # --- Кросс-валидация ---
-    scoring = {"accuracy": "accuracy", "f1_macro": "f1_macro", "f1_weighted": "f1_weighted"}
+    # Оценка на тесте
+    y_pred = estimator.predict(X_test)
 
-    cv_results = cross_validate(
-        estimator, X, y, cv=cv, scoring=scoring, n_jobs=cv_n_jobs,
-    )
+    acc = accuracy_score(y_test, y_pred)
+    f1_mac = f1_score(y_test, y_pred, average="macro", zero_division=0)
+    f1_w = f1_score(y_test, y_pred, average="weighted", zero_division=0)
 
-    print(f"\n{'Метрика':<20} {'Среднее':>10} {'Std':>10}")
-    print("-" * 42)
-    for key, label in [("test_accuracy", "Accuracy"),
-                        ("test_f1_macro", "Macro F1"),
-                        ("test_f1_weighted", "Weighted F1")]:
-        s = cv_results[key]
-        print(f"  {label:<18} {s.mean():>10.4f} {s.std():>10.4f}")
-
-    # --- Classification report (честный, через cross_val_predict) ---
-    y_pred = cross_val_predict(estimator, X, y, cv=cv, n_jobs=cv_n_jobs)
-    print(f"\n[{name}] Classification report (cross-validated):")
-    print(classification_report(y, y_pred, target_names=le.classes_, zero_division=0))
-
-    print(f"[{name}] Готово.")
+    print(f"\n[{name}] Результаты на тестовой выборке:")
+    print(f"  Accuracy:    {acc:.4f}")
+    print(f"  Macro F1:    {f1_mac:.4f}")
+    print(f"  Weighted F1: {f1_w:.4f}")
+    print(f"\n{classification_report(y_test, y_pred, target_names=label_names, zero_division=0)}")

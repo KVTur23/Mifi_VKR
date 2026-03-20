@@ -20,7 +20,8 @@ from langdetect import detect, LangDetectException
 
 # --- Настройки ---
 
-SIMILARITY_THRESHOLD = 0.95  # Косинусное сходство выше этого — почти дубликат, отсеиваем
+SIMILARITY_THRESHOLD = 0.95  # Порог косинусного сходства
+SIMILARITY_THRESHOLD_LOW = 0.98  # Мягкий порог для классов с 1 оригинальным примером
 MIN_TEXT_LENGTH = 20         # Короче 20 символов — скорее всего мусор или обрезанное письмо
 SBERT_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"  # Русскоязычная SBERT для эмбеддингов
 # можно заменить на ai-forever/ru-en-RoSBERTa 
@@ -50,10 +51,10 @@ def validate_generated_texts(
     similarity_threshold: float = SIMILARITY_THRESHOLD,
     min_length: int = MIN_TEXT_LENGTH,
     sbert_model: SentenceTransformer | None = None,
+    n_original: int | None = None,
 ) -> list[str]:
     """
     Главная функция — прогоняет новые тексты через все фильтры.
-
 
     Аргументы:
         new_texts:             список сгенерированных текстов
@@ -63,6 +64,8 @@ def validate_generated_texts(
         min_length:            минимальная длина текста в символах
         sbert_model:           предзагруженная SBERT-модель. Если None —
                                загрузится автоматически через кэш.
+        n_original:            количество оригинальных примеров класса (до аугментации).
+                               Если == 1 — используется мягкий порог 0.98.
 
     Возвращает:
         Список текстов, прошедших все проверки
@@ -82,14 +85,19 @@ def validate_generated_texts(
     texts = filter_foreign_scripts(texts, class_name)
     texts = filter_prompt_leak(texts, class_name)
 
-    # Косинусное сходство 
+    # Адаптивный порог: для классов с 1 примером — мягче (0.98)
+    threshold = similarity_threshold
+    if n_original is not None and n_original == 1:
+        threshold = SIMILARITY_THRESHOLD_LOW
+
+    # Косинусное сходство
     if texts and existing_texts:
         if sbert_model is None:
             sbert_model = get_sbert_model()
         texts = filter_by_cosine_similarity(
             texts, existing_texts, class_name,
             sbert_model=sbert_model,
-            threshold=similarity_threshold,
+            threshold=threshold,
         )
 
     total_after = len(texts)
@@ -298,16 +306,76 @@ def filter_foreign_scripts(
     return filtered
 
 
-# Слова-маркеры промпт-утечки — LLM начинает текст с мета-описания вместо письма.
-_PROMPT_LEAK_MARKERS = [
+# Маркеры промпт-утечки в начале текста (первые 150 символов)
+_PROMPT_LEAK_START_MARKERS = [
     "конечно,",
+    "конечно!",
     "генерирую",
     "вот несколько",
     "вот примеры",
     "вот образцы",
+    "вот еще одно письмо",
+    "вот ещё одно письмо",
     "несколько примеров",
     "пример письма:",
+    "текущий текст:",
+    "как вы можете видеть",
 ]
+
+# Маркеры промпт-утечки в любом месте текста — фрагменты промпта/системного сообщения
+_PROMPT_LEAK_ANYWHERE_MARKERS = [
+    # Фрагменты промпта
+    "напиши одно письмо",
+    "напиши пример письма",
+    "напиши одно новое письмо",
+    "на основе этих примеров",
+    "tokenname:",
+    "без пояснений и комментариев",
+    "не используй markdown",
+    "не добавляй ничего после письма",
+    "перепиши это письмо другими словами",
+    "переформулированное письмо:",
+    "только текст письма:",
+    # Мета-обсуждение задания
+    "предоставьте пример",
+    "предоставь пример",
+    "можно ли составить",
+    "какие типичные элементы",
+    "письмо такого же типа",
+    "такого же формата",
+    "прошу вас создать",
+    "пожалуйста, создайте",
+    "создайте ещё одно письмо",
+    "создайте еще одно письмо",
+    "ваш запрос не совсем",
+    "какие параметры можно изменить",
+    "используя предоставленный шаблон",
+    "я создам",
+    "для указанного класса",
+    "для класса «",
+    'для класса "',
+    "эти письма содержат",
+    "эти метки нужно",
+    # Объяснение токенов
+    "[person] - имя",
+    "[person] — имя",
+    "[organization] - название",
+    "[organization] — название",
+    "[date_time] - дата",
+    "[date_time] — дата",
+]
+
+# Regex-паттерны для промпт-утечки
+_PROMPT_LEAK_RE = re.compile(
+    r"(?:"
+    r"\*\*[^*\n]{3,}?\*\*"            # Markdown bold **текст**
+    r"|(?:^|\n)###?\s"                  # Markdown заголовки
+    r"|(?:^|\n)\s*(?:###?\s+)?(?:[Пп]исьмо)\s+\d+\s*[:\n]"  # Нумерованные письма
+    r"|(?:^|\n)user\s*\n"              # Role-маркеры (user\n)
+    r"|\[[А-ЯЁ_]{4,}\]"              # Русскоязычные NER-токены [НАЗВАНИЕ_КОМПАНИИ]
+    r")",
+    re.MULTILINE,
+)
 
 
 def filter_prompt_leak(
@@ -315,9 +383,12 @@ def filter_prompt_leak(
     class_name: str,
 ) -> list[str]:
     """
-    Отсеивает тексты, где LLM описала своё задание вместо письма.
+    Отсеивает тексты с промпт-утечкой.
 
-    Проверяем только начало текста (первые 150 символов) — утечка всегда там.
+    Три уровня проверки:
+    - начало текста (первые 150 символов) — мета-фразы
+    - весь текст — фрагменты промпта или системного сообщения
+    - regex — Markdown-разметка, нумерованные письма, русские NER-токены
 
     Аргументы:
         texts:      список текстов для проверки
@@ -327,8 +398,18 @@ def filter_prompt_leak(
         Список текстов без признаков промпт-утечки
     """
     def is_leak(text: str) -> bool:
-        start = text.strip()[:150].lower()
-        return any(marker in start for marker in _PROMPT_LEAK_MARKERS)
+        lower = text.strip().lower()
+        # Проверка начала
+        start = lower[:150]
+        if any(m in start for m in _PROMPT_LEAK_START_MARKERS):
+            return True
+        # Проверка по всему тексту
+        if any(m in lower for m in _PROMPT_LEAK_ANYWHERE_MARKERS):
+            return True
+        # Regex-паттерны
+        if _PROMPT_LEAK_RE.search(text):
+            return True
+        return False
 
     filtered = [t for t in texts if not is_leak(t)]
 
