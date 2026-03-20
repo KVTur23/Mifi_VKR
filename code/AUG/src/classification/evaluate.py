@@ -90,3 +90,5 @@ def evaluate_model(
     print(f"  Macro F1:    {f1_mac:.4f}")
     print(f"  Weighted F1: {f1_w:.4f}")
     print(f"\n{classification_report(y_test, y_pred, target_names=label_names, zero_division=0)}")
+
+    return {"name": name, "accuracy": acc, "macro_f1": f1_mac, "weighted_f1": f1_w}
