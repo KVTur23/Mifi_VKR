@@ -1,6 +1,7 @@
 transformers==5.2.0          # Загрузка и инференс моделей с HuggingFace
 torch>=2.1.0                # Бэкенд для transformers
 accelerate>=0.27.0          # Ускорение загрузки больших моделей (device_map="auto")
+bitsandbytes>=0.43.0        # int8/int4 квантизация для больших моделей (NLLB-3.3B на T4)
 sentencepiece>=0.1.99       # Токенизатор для некоторых моделей (Qwen, LLaMA и др.)
 unsloth                     # Оптимизированная 4-bit загрузка моделей (14B влезает в T4)
 sentence-transformers>=3.0.0  # SBERT-модели для эмбеддингов (ai-forever/sbert_large_nlu_ru)

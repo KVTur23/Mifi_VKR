@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 import pandas as pd
 import numpy as np
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
 from tqdm import tqdm
 
 # Добавляем корень проекта в sys.path
@@ -40,14 +40,15 @@ STAGE = 3
 TARGET_COUNT = 50       # Доводим каждый класс до 50 примеров
 MAX_RETRIES = 5         # Сколько раз пробуем, если валидация отсеяла слишком много
 
-# NLLB-200 от Meta — одна модель, переводит в обе стороны.
-MODEL_NLLB = "facebook/nllb-200-distilled-600M"
+# NLLB-200-1.3B от Meta — одна модель, переводит в обе стороны.
+# 1.3B параметров — качественнее distilled-600M, стабильно влезает в T4.
+MODEL_NLLB = "facebook/nllb-200-1.3B"
 
 # Языковые коды в формате NLLB (flores200)
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 
-BATCH_SIZE = 64         # T4 (16GB): NLLB-600M ~1.2GB, остаток — для батча.
+BATCH_SIZE = 32         # T4 (16GB): NLLB-1.3B в int8 ~1.5GB, достаточно места для батча
 MAX_LENGTH = 512        # Максимальная длина перевода в токенах
 OVERSAMPLE_FACTOR = 3   # Генерируем в N раз больше, чем нужно — запас на отсев валидацией
 
@@ -67,11 +68,22 @@ def load_translation_models() -> tuple:
     print(f"[Перевод] Загружаю NLLB-200: {MODEL_NLLB} (устройство: {device})")
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NLLB)
-    model = AutoModelForSeq2SeqLM.from_pretrained(
-        MODEL_NLLB,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-    )
-    model = model.to(device)
+
+    if device == "cuda":
+        # int8 квантизация через bitsandbytes — ~1.5 GB VRAM
+        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            MODEL_NLLB,
+            quantization_config=quantization_config,
+            device_map="auto",
+        )
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            MODEL_NLLB,
+            torch_dtype=torch.float32,
+        )
+        model = model.to(device)
+
     model.eval()
 
     print("[Перевод] Модель загружена")
