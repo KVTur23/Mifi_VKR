@@ -335,6 +335,7 @@ def run() -> None:
             valid = validate_generated_texts(
                 candidates, current_existing, class_name,
                 sbert_model=sbert_model,
+                skip_prompt_leak=True,
             )
 
             take = min(len(valid), still_needed)

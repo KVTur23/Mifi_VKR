@@ -52,6 +52,7 @@ def validate_generated_texts(
     min_length: int = MIN_TEXT_LENGTH,
     sbert_model: SentenceTransformer | None = None,
     n_original: int | None = None,
+    skip_prompt_leak: bool = False,
 ) -> list[str]:
     """
     Главная функция — прогоняет новые тексты через все фильтры.
@@ -66,6 +67,8 @@ def validate_generated_texts(
                                загрузится автоматически через кэш.
         n_original:            количество оригинальных примеров класса (до аугментации).
                                Если == 1 — используется мягкий порог 0.98.
+        skip_prompt_leak:      пропустить фильтр промпт-утечки (для обратного
+                               перевода, где утечка невозможна).
 
     Возвращает:
         Список текстов, прошедших все проверки
@@ -83,7 +86,8 @@ def validate_generated_texts(
     texts = filter_non_russian(texts, class_name)
     texts = filter_degenerate(texts, class_name)
     texts = filter_foreign_scripts(texts, class_name)
-    texts = filter_prompt_leak(texts, class_name)
+    if not skip_prompt_leak:
+        texts = filter_prompt_leak(texts, class_name)
 
     # Адаптивный порог: для классов с 1 примером — мягче (0.98)
     threshold = similarity_threshold
@@ -372,7 +376,6 @@ _PROMPT_LEAK_RE = re.compile(
     r"|(?:^|\n)###?\s"                  # Markdown заголовки
     r"|(?:^|\n)\s*(?:###?\s+)?(?:[Пп]исьмо)\s+\d+\s*[:\n]"  # Нумерованные письма
     r"|(?:^|\n)user\s*\n"              # Role-маркеры (user\n)
-    r"|\[[А-ЯЁ_]{4,}\]"              # Русскоязычные NER-токены [НАЗВАНИЕ_КОМПАНИИ]
     r")",
     re.MULTILINE,
 )
