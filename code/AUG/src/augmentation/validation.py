@@ -20,9 +20,10 @@ from langdetect import detect, LangDetectException
 
 # --- Настройки ---
 
-SIMILARITY_THRESHOLD = 0.95  # Порог косинусного сходства
+SIMILARITY_THRESHOLD = 0.95  # Верхний порог косинусного сходства (слишком похож → копия)
 SIMILARITY_THRESHOLD_LOW = 0.98  # Мягкий порог для классов с 1 оригинальным примером
-MIN_TEXT_LENGTH = 20         # Короче 20 символов — скорее всего мусор или обрезанное письмо
+SIMILARITY_THRESHOLD_MIN = 0.5   # Нижний порог (слишком далёк → текст исказился до неузнаваемости)
+MIN_TEXT_LENGTH = 500        # Минимальная длина в символах (медиана оригинала ~1255)
 SBERT_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"  # Русскоязычная SBERT для эмбеддингов
 # можно заменить на ai-forever/ru-en-RoSBERTa 
 # Кэш модели на уровне модуля — грузим один раз, переиспользуем во всех вызовах
@@ -427,20 +428,25 @@ def filter_by_cosine_similarity(
     class_name: str,
     sbert_model: SentenceTransformer,
     threshold: float = SIMILARITY_THRESHOLD,
+    threshold_min: float = SIMILARITY_THRESHOLD_MIN,
 ) -> list[str]:
     """
-    Отсеивает тексты, слишком похожие на уже существующие.
+    Отсеивает тексты по косинусному сходству с существующими.
 
+    Два порога:
+    - Верхний (threshold): > порога → слишком похож, почти копия → отсеиваем
+    - Нижний (threshold_min): < порога → слишком далёк, текст исказился → отсеиваем
 
     Аргументы:
         new_texts:      сгенерированные тексты (уже без точных дубликатов)
         existing_texts: тексты этого класса в датасете
         class_name:     название класса (для логов)
         sbert_model:    загруженная SBERT-модель
-        threshold:      порог сходства (по умолчанию 0.95)
+        threshold:      верхний порог сходства (по умолчанию 0.95)
+        threshold_min:  нижний порог сходства (по умолчанию 0.5)
 
     Возвращает:
-        Список текстов с косинусным сходством ниже порога
+        Список текстов с косинусным сходством в диапазоне [threshold_min, threshold)
     """
     if not new_texts or not existing_texts:
         return new_texts
@@ -456,13 +462,21 @@ def filter_by_cosine_similarity(
     max_similarities = np.max(sim_matrix, axis=1)
 
     filtered = []
+    removed_too_similar = 0
+    removed_too_different = 0
     for i, text in enumerate(new_texts):
-        if max_similarities[i] < threshold:
+        if max_similarities[i] >= threshold:
+            removed_too_similar += 1
+        elif max_similarities[i] < threshold_min:
+            removed_too_different += 1
+        else:
             filtered.append(text)
 
-    removed = len(new_texts) - len(filtered)
-    if removed > 0:
-        print(f"  [Сходство] Класс «{class_name}»: отсеяно {removed} текстов "
+    if removed_too_similar > 0:
+        print(f"  [Сходство] Класс «{class_name}»: отсеяно {removed_too_similar} текстов "
               f"(косинусное сходство > {threshold})")
+    if removed_too_different > 0:
+        print(f"  [Искажение] Класс «{class_name}»: отсеяно {removed_too_different} текстов "
+              f"(косинусное сходство < {threshold_min}, текст искажён)")
 
     return filtered

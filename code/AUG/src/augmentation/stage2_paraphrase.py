@@ -1,16 +1,18 @@
 """
-stage2_paraphrase.py — Этап 2: парафраз текстов через LLM
+stage2_paraphrase.py — Этап 2: парафраз текстов через LLM (батчевый режим)
 
 Берём классы с 15–34 примерами (включая дополненные на этапе 1) и доводим
 до 35 через перефразирование. Для каждого недостающего примера берём случайный
-оригинальный текст класса и просим LLM переформулировать его — другая структура
-предложений, синонимы, другой порядок, но тот же смысл.
+оригинальный текст класса и просим LLM переформулировать его.
+
+Использует vLLM для батчевого инференса — все парафразы одного класса
+генерируются за один вызов GPU.
 
 Вход:  Data/data_after_stage1.csv  (или data_after_stage2.csv, если чекпоинт есть)
 Выход: Data/data_after_stage2.csv
 
 Запуск:
-    python src/augmentation/stage2_paraphrase.py --config configs/model_qwen.json
+    python src/augmentation/stage2_paraphrase.py --config configs/model_vllm.json
 """
 
 import sys
@@ -21,7 +23,6 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-# Добавляем корень проекта в sys.path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -29,7 +30,7 @@ from src.utils.data_loader import (
     load_dataset, save_checkpoint, get_class_distribution,
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
 )
-from src.augmentation.llm_utils import load_llm, generate_text, load_prompt_template
+from src.augmentation.llm_utils import load_llm, generate_batch, load_prompt_template, select_top_half
 from src.augmentation.validation import validate_generated_texts
 from src.utils.config_loader import load_model_config
 
@@ -38,25 +39,13 @@ from src.utils.config_loader import load_model_config
 
 STAGE = 2
 TARGET_COUNT = 35       # Доводим каждый класс до 35 примеров
-MAX_RETRIES = 10         # Сколько раз пробуем перефразировать, если валидация отсеяла слишком много
-BATCH_SIZE = 20          # Сколько парафразов генерировать за одну попытку (лишние отсеются валидацией)
-PARAPHRASE_PROMPT = "paraphrase.txt"  # Промпт по умолчанию (для 7B+); для слабых моделей — из конфига
+MAX_RETRIES = 5          # Сколько раундов батчевой генерации при нехватке
+PARAPHRASE_PROMPT = "paraphrase.txt"
 
 
 def build_paraphrase_prompt(template: str, original_text: str, class_name: str) -> str:
     """
     Собирает промпт для перефразирования одного текста.
-
-    Подставляет оригинальный текст и название класса в шаблон
-    из prompts/paraphrase.txt.
-
-    Аргументы:
-        template:      текст шаблона промпта
-        original_text: оригинальное письмо, которое нужно перефразировать
-        class_name:    название класса (для контекста модели)
-
-    Возвращает:
-        Готовый промпт для передачи в LLM
     """
     return template.format(
         original_text=original_text,
@@ -64,74 +53,21 @@ def build_paraphrase_prompt(template: str, original_text: str, class_name: str) 
     )
 
 
-def paraphrase_text(
-    original_text: str,
-    class_name: str,
-    model,
-    tokenizer,
-    generation_params: dict,
-    prompt_template: str,
-    system_prompt: str | None = None,
-) -> str | None:
-    """
-    Перефразирует один текст через LLM.
-
-    Отправляет оригинальное письмо в модель с промптом на переформулировку.
-    Возвращает первый сгенерированный вариант или None, если генерация не удалась.
-
-    Аргументы:
-        original_text:    оригинальное письмо
-        class_name:       название класса
-        model:            загруженная LLM
-        tokenizer:        токенизатор
-        generation_params: параметры генерации
-        prompt_template:  текст шаблона промпта
-
-    Возвращает:
-        Перефразированный текст или None при ошибке
-    """
-    prompt = build_paraphrase_prompt(prompt_template, original_text, class_name)
-    results = generate_text(model, tokenizer, prompt, generation_params, system_prompt=system_prompt)
-
-    if not results:
-        return None
-
-    # Берём первый результат — для парафраза одного текста больше и не нужно
-    return results[0].strip()
-
-
 def augment_class(
     class_name: str,
     existing_texts: list[str],
     n_needed: int,
-    model,
-    tokenizer,
-    generation_params: dict,
+    llm,
+    sampling_params,
     prompt_template: str,
     system_prompt: str | None = None,
 ) -> list[str]:
     """
-    Генерирует новые тексты для одного класса через перефразирование.
+    Генерирует новые тексты для одного класса через батчевый парафраз.
 
-    Для каждого недостающего текста берём случайный оригинал из класса
-    и перефразируем его. Каждый оригинал стараемся использовать примерно
-    одинаковое число раз, чтобы разнообразие было максимальным.
-    После генерации — валидация. Если отсеяли слишком много — повторяем.
-
-    Аргументы:
-        class_name:        название класса
-        existing_texts:    уже имеющиеся тексты этого класса
-        n_needed:          сколько новых текстов нужно
-        model:             загруженная LLM
-        tokenizer:         токенизатор
-        generation_params: параметры генерации
-        prompt_template:   текст шаблона промпта
-
-    Возвращает:
-        Список валидных перефразированных текстов
+    За один раунд собирает все промпты и отправляет в vLLM одним батчем.
     """
     all_valid_texts = []
-    # Все тексты, которые уже есть + принятые парафразы — для валидации
     current_existing = list(existing_texts)
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -139,69 +75,64 @@ def augment_class(
         if still_needed <= 0:
             break
 
-        # Генерируем с запасом на отсев валидации (+50%), но не больше BATCH_SIZE
-        batch = min(BATCH_SIZE, max(still_needed, int(still_needed * 1.5)))
-        print(f"  [Попытка {attempt}/{MAX_RETRIES}] Нужно ещё {still_needed}, генерируем {batch}")
+        # Генерируем с запасом 3x — часть отсеется валидацией + LLM-судья отберёт лучших
+        batch_size = int(still_needed * 3) + 1
+        print(f"  [Раунд {attempt}/{MAX_RETRIES}] Нужно ещё {still_needed}, "
+              f"генерируем батч из {batch_size} парафразов")
 
-        # Выбираем оригиналы для перефразирования — равномерно по кругу,
-        # чтобы не перефразировать один и тот же текст десять раз подряд
-        sources = _select_sources(existing_texts, batch)
+        # Выбираем оригиналы для перефразирования — равномерно по кругу
+        sources = _select_sources(existing_texts, batch_size)
 
-        # Перефразируем каждый выбранный текст
-        paraphrased = []
-        for i, source_text in enumerate(sources):
-            result = paraphrase_text(
-                source_text, class_name,
-                model, tokenizer, generation_params, prompt_template,
-                system_prompt=system_prompt,
-            )
-            if result:
-                paraphrased.append(result)
+        # Собираем все промпты
+        prompts = [
+            build_paraphrase_prompt(prompt_template, source, class_name)
+            for source in sources
+        ]
 
-            # Прогресс внутри попытки 
-            if (i + 1) % 5 == 0 or i == len(sources) - 1:
-                print(f"    Перефразировано {i + 1}/{len(sources)}", end="\r")
+        # Батчевая генерация через vLLM
+        raw_outputs = generate_batch(llm, sampling_params, prompts, system_prompt=system_prompt)
 
-        print()  # Перенос строки после прогресса
-        print(f"  [Попытка {attempt}] Получено {len(paraphrased)} парафразов")
+        # Собираем непустые кандидаты
+        paraphrased = [text for text in raw_outputs if text]
 
-        # Валидация — отсеиваем дубликаты и слишком похожие
+        print(f"  [Раунд {attempt}] Получено {len(paraphrased)} парафразов")
+
+        if not paraphrased:
+            continue
+
+        # Валидация
         valid = validate_generated_texts(paraphrased, current_existing, class_name)
 
-       
-        # Берём только столько, сколько нужно
+        # LLM-судья оценивает и отсеивает слабые тексты
+        valid = select_top_half(
+            valid, class_name, llm, sampling_params,
+            n_needed=still_needed, system_prompt=system_prompt,
+        )
+
+        # Берём только сколько нужно
         take = min(len(valid), still_needed)
         all_valid_texts.extend(valid[:take])
         current_existing.extend(valid[:take])
 
+        print(f"  [Раунд {attempt}] Прошло валидацию {len(valid)}, "
+              f"принято {take}, всего {len(all_valid_texts)}/{n_needed}")
+
     if len(all_valid_texts) < n_needed:
         print(f"  [Внимание] Класс «{class_name}»: удалось получить только "
-              f"{len(all_valid_texts)}/{n_needed} парафразов за {MAX_RETRIES} попыток")
+              f"{len(all_valid_texts)}/{n_needed} парафразов за {MAX_RETRIES} раундов")
 
     return all_valid_texts
 
 
 def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
     """
-    Выбирает оригинальные тексты для перефразирования.
-
-    Распределяем равномерно: если оригиналов 15, а нужно 20 парафразов —
-    каждый текст перефразируем по одному разу, потом оставшиеся 5 берём случайно.
-
-    Аргументы:
-        existing_texts: список оригинальных текстов класса
-        n_needed:       сколько парафразов нужно
-
-    Возвращает:
-        Список текстов-источников (с возможными повторами, если n_needed > len(existing))
+    Выбирает оригинальные тексты для перефразирования равномерно по кругу.
     """
     sources = []
 
-    # Сначала берём каждый оригинал по разу (перемешав для разнообразия)
     shuffled = list(existing_texts)
     random.shuffle(shuffled)
 
-    # Повторяем полные «круги» по оригиналам, пока не наберём нужное
     full_rounds = n_needed // len(shuffled)
     remainder = n_needed % len(shuffled)
 
@@ -210,7 +141,6 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
         random.shuffle(round_copy)
         sources.extend(round_copy)
 
-    # Дополняем остаток
     if remainder > 0:
         extra = list(shuffled)
         random.shuffle(extra)
@@ -222,14 +152,7 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
 def run(config_path: str) -> None:
     """
     Основная функция этапа 2 — точка входа.
-
-    Загружает данные после этапа 1, определяет классы с < 35 примерами,
-    перефразирует тексты, сохраняет чекпоинт.
-
-    Аргументы:
-        config_path: путь до JSON-конфига модели
     """
-    # --- Фиксируем seed для воспроизводимости ---
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
@@ -241,7 +164,6 @@ def run(config_path: str) -> None:
     df = load_dataset(stage=STAGE)
 
     # --- Какие классы нуждаются в аугментации ---
-    # После этапа 1 все классы должны иметь >= 15, но некоторые могут быть < 35
     classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
 
     if not classes_to_augment:
@@ -254,8 +176,7 @@ def run(config_path: str) -> None:
         print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
     # --- Загрузка LLM ---
-    # Используем ту же модель что и для этапа 1, но промпт и system_prompt другие
-    model, tokenizer, generation_params, _, _ = load_llm(config_path)
+    llm, sampling_params, _ = load_llm(config_path)
     config = load_model_config(config_path)
     paraphrase_template_name = config.get("paraphrase_template", PARAPHRASE_PROMPT)
     system_prompt = config.get("paraphrase_system_prompt")
@@ -275,9 +196,8 @@ def run(config_path: str) -> None:
                 class_name=class_name,
                 existing_texts=existing_texts,
                 n_needed=n_needed,
-                model=model,
-                tokenizer=tokenizer,
-                generation_params=generation_params,
+                llm=llm,
+                sampling_params=sampling_params,
                 prompt_template=prompt_template,
                 system_prompt=system_prompt,
             )
@@ -291,17 +211,14 @@ def run(config_path: str) -> None:
 
         print(f"[Этап 2] Класс «{class_name}»: добавлено {len(generated)} парафразов")
 
-        if len(generated) != 0:
-            for text in generated:
-                print(f"Пример сгенерированного письма:\n{'-'*50}\n{text}\n")
-
-        # Промежуточное сохранение каждые 3 класса — страховка от вылета ядра
-        if (class_idx + 1) % 3 == 0 and new_rows:
+        # Промежуточное сохранение
+        if new_rows:
             df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
             save_checkpoint(df_tmp, stage=STAGE)
-            print(f"[Этап 2] Промежуточное сохранение: {class_idx + 1} классов обработано, {len(df_tmp)} записей в файле")
+            print(f"[Этап 2] Промежуточное сохранение: "
+                  f"{class_idx + 1} классов обработано, {len(df_tmp)} записей")
 
-    # --- Добавляем перефразированные тексты к датасету ---
+    # --- Добавляем перефразированные тексты ---
     if new_rows:
         new_df = pd.DataFrame(new_rows)
         df = pd.concat([df, new_df], ignore_index=True)
@@ -309,7 +226,6 @@ def run(config_path: str) -> None:
     else:
         print("\n[Этап 2] Новых текстов не сгенерировано")
 
-    # --- Сохраняем чекпоинт ---
     save_checkpoint(df, stage=STAGE)
 
     # --- Итоговая статистика ---
@@ -330,7 +246,7 @@ if __name__ == "__main__":
         "--config",
         type=str,
         required=True,
-        help="Путь до JSON-конфига модели (например, configs/model_qwen.json)",
+        help="Путь до JSON-конфига модели (например, configs/model_vllm.json)",
     )
     args = parser.parse_args()
 
