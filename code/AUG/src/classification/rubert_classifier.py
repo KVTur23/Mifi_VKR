@@ -11,7 +11,7 @@ import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score, f1_score, classification_report
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, classification_report
 from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 
@@ -121,17 +121,17 @@ def train_and_evaluate(
 
     all_preds = np.array(all_preds)
     acc = accuracy_score(y_test, all_preds)
+    bal_acc = balanced_accuracy_score(y_test, all_preds)
     f1_mac = f1_score(y_test, all_preds, average="macro", zero_division=0)
-    f1_w = f1_score(y_test, all_preds, average="weighted", zero_division=0)
 
     print(f"\n[{name}] Результаты на тестовой выборке:")
-    print(f"  Accuracy:    {acc:.4f}")
-    print(f"  Macro F1:    {f1_mac:.4f}")
-    print(f"  Weighted F1: {f1_w:.4f}")
+    print(f"  Accuracy:          {acc:.4f}")
+    print(f"  Balanced Accuracy: {bal_acc:.4f}")
+    print(f"  Macro F1:          {f1_mac:.4f}")
     print(f"\n{classification_report(y_test, all_preds, target_names=le.classes_, zero_division=0)}")
 
     # Cleanup GPU
     del model, optimizer, train_ds, test_ds
     torch.cuda.empty_cache()
 
-    return {"name": name, "accuracy": acc, "macro_f1": f1_mac, "weighted_f1": f1_w}
+    return {"name": name, "accuracy": acc, "balanced_accuracy": bal_acc, "macro_f1": f1_mac}
