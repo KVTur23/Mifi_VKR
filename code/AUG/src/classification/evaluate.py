@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, classification_report
+from sklearn.metrics import balanced_accuracy_score, f1_score, classification_report
 from sklearn.preprocessing import LabelEncoder
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -79,14 +79,12 @@ def evaluate_model(
     # Оценка на тесте
     y_pred = estimator.predict(X_test)
 
-    acc = accuracy_score(y_test, y_pred)
     bal_acc = balanced_accuracy_score(y_test, y_pred)
     f1_mac = f1_score(y_test, y_pred, average="macro", zero_division=0)
 
     print(f"\n[{name}] Результаты на тестовой выборке:")
-    print(f"  Accuracy:          {acc:.4f}")
     print(f"  Balanced Accuracy: {bal_acc:.4f}")
     print(f"  Macro F1:          {f1_mac:.4f}")
     print(f"\n{classification_report(y_test, y_pred, target_names=label_names, zero_division=0)}")
 
-    return {"name": name, "accuracy": acc, "balanced_accuracy": bal_acc, "macro_f1": f1_mac}
+    return {"name": name, "balanced_accuracy": bal_acc, "macro_f1": f1_mac}

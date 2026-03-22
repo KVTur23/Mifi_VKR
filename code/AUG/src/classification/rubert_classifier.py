@@ -11,11 +11,11 @@ import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, classification_report
+from sklearn.metrics import balanced_accuracy_score, f1_score, classification_report
 from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 
-MODEL_NAME = "cointegrated/rubert-tiny2"
+DEFAULT_MODEL = "cointegrated/rubert-tiny2"
 MAX_LENGTH = 256
 BATCH_SIZE = 32
 LEARNING_RATE = 5e-4
@@ -46,19 +46,20 @@ def train_and_evaluate(
     df_test: pd.DataFrame,
     text_col: str = "text",
     label_col: str = "label",
+    model_name: str = DEFAULT_MODEL,
     num_epochs: int = NUM_EPOCHS,
     batch_size: int = BATCH_SIZE,
     lr: float = LEARNING_RATE,
     name: str = "rubert-tiny2",
 ) -> dict:
     """
-    Fine-tune rubert-tiny2 на train, оценка на test.
+    Fine-tune BERT-модель на train, оценка на test.
 
     Возвращает:
-        dict с ключами: name, accuracy, macro_f1, weighted_f1
+        dict с ключами: name, balanced_accuracy, macro_f1
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[{name}] Device: {device}")
+    print(f"[{name}] Device: {device}, Model: {model_name}")
 
     # Encode labels
     le = LabelEncoder()
@@ -70,9 +71,9 @@ def train_and_evaluate(
     texts_test = df_test[text_col].tolist()
 
     # Tokenizer + model
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_NAME, num_labels=num_labels,
+        model_name, num_labels=num_labels,
     ).to(device)
 
     # Datasets
@@ -120,12 +121,10 @@ def train_and_evaluate(
             all_preds.extend(preds)
 
     all_preds = np.array(all_preds)
-    acc = accuracy_score(y_test, all_preds)
     bal_acc = balanced_accuracy_score(y_test, all_preds)
     f1_mac = f1_score(y_test, all_preds, average="macro", zero_division=0)
 
     print(f"\n[{name}] Результаты на тестовой выборке:")
-    print(f"  Accuracy:          {acc:.4f}")
     print(f"  Balanced Accuracy: {bal_acc:.4f}")
     print(f"  Macro F1:          {f1_mac:.4f}")
     print(f"\n{classification_report(y_test, all_preds, target_names=le.classes_, zero_division=0)}")
@@ -134,4 +133,4 @@ def train_and_evaluate(
     del model, optimizer, train_ds, test_ds
     torch.cuda.empty_cache()
 
-    return {"name": name, "accuracy": acc, "balanced_accuracy": bal_acc, "macro_f1": f1_mac}
+    return {"name": name, "balanced_accuracy": bal_acc, "macro_f1": f1_mac}
