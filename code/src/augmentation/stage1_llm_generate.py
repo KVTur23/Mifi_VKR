@@ -1,12 +1,10 @@
 """
 stage1_llm_generate.py — Этап 1: генерация текстов через LLM (батчевый режим)
 
-Берём классы, в которых меньше 15 примеров, и догоняем их до 15
-с помощью языковой модели через vLLM (батчевый инференс).
-После генерации запускается валидация — дубликаты и мусор отсеиваются.
-Если после отсева не хватает примеров, генерация повторяется.
+Берём классы где меньше 15 примеров и догоняем до 15 через LLM.
+Генерация идёт батчами через vLLM, после — валидация и оценка LLM-судьёй.
 
-Вход:  Data/train_after_eda.csv  (или data_after_stage1.csv, если чекпоинт есть)
+Вход:  Data/train_after_eda.csv  (или data_after_stage1.csv если чекпоинт есть)
 Выход: Data/data_after_stage1.csv
 
 Запуск:
@@ -28,16 +26,20 @@ from src.utils.data_loader import (
     load_dataset, save_checkpoint, get_class_distribution,
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
 )
-from src.augmentation.llm_utils import load_llm, generate_text, generate_batch, load_prompt_template, select_top_half
+from src.augmentation.llm_utils import (
+    load_llm, generate_text, generate_batch,
+    load_prompt_template, select_top_half,
+)
 from src.augmentation.validation import validate_generated_texts
 
 
-# --- Настройки этапа ---
+# --- Настройки этапа (дефолты, переопределяются через pipeline_config) ---
 
 STAGE = 1
-TARGET_COUNT = 15       # Доводим каждый класс до 15 примеров
-MAX_RETRIES = 5          # Сколько раундов батчевой генерации при нехватке
-MAX_EXAMPLES_IN_PROMPT = 5  # Сколько примеров класса показывать модели в промпте
+TARGET_COUNT = 15
+MAX_RETRIES = 5
+MAX_EXAMPLES_IN_PROMPT = 5
+OVERSAMPLE_FACTOR = 5
 
 
 def generate_class_context(
@@ -48,7 +50,9 @@ def generate_class_context(
     system_prompt: str | None = None,
 ) -> str:
     """
-    Генерирует краткое описание класса на основе всех имеющихся примеров.
+    Просим LLM описать класс по имеющимся примерам.
+    Это описание потом подставляется в промпт генерации —
+    помогает модели лучше понять что за класс.
     """
     context_template = load_prompt_template("class_context.txt")
     examples_text = "\n---\n".join(examples)
@@ -57,19 +61,20 @@ def generate_class_context(
     try:
         result = generate_text(llm, sampling_params, prompt, system_prompt=system_prompt)
         if result:
+            # берём только первый абзац — дальше модель иногда начинает нести
             context = result.split("\n\n")[0].strip()
             print(f"  [Контекст] «{class_name}»:\n{context}\n")
             return context
     except Exception as e:
         print(f"  [Контекст] Ошибка генерации контекста для «{class_name}»: {e}")
 
+    # фоллбэк если LLM не смогла
     return f"Официальные входящие письма класса «{class_name}»."
 
 
 def build_prompt(template: str, class_name: str, examples: list[str], context: str = "") -> str:
-    """
-    Собирает промпт для генерации одного письма.
-    """
+    """Собирает промпт для генерации одного письма."""
+    # перемешиваем примеры что бы модель не запоминала порядок
     shuffled = list(examples)
     random.shuffle(shuffled)
     selected_examples = shuffled[:MAX_EXAMPLES_IN_PROMPT]
@@ -94,10 +99,10 @@ def augment_class(
     n_original: int | None = None,
 ) -> list[str]:
     """
-    Генерирует новые тексты для одного класса батчами.
+    Генерирует тексты для одного класса батчами.
 
-    За один раунд генерирует n_needed промптов одновременно,
-    валидирует, и если не хватает — повторяет.
+    Схема: генерируем с запасом 3x → валидация (фильтры) → LLM-судья (оценка) → берём лучшие.
+    Если после всего не хватает — повторяем (до MAX_RETRIES раз).
     """
     all_valid_texts = []
     current_existing = list(existing_texts)
@@ -107,46 +112,54 @@ def augment_class(
         if still_needed <= 0:
             break
 
-        # Генерируем с запасом 3x — часть отсеется валидацией + LLM-судья отберёт лучших
-        batch_size = int(still_needed * 3) + 1
+        # генерируем 3x от нужного — часть отсеется фильтрами, часть судьёй
+        batch_size = int(still_needed * OVERSAMPLE_FACTOR) + 1
         print(f"  [Генерация] Раунд {attempt + 1}/{MAX_RETRIES}: "
               f"генерируем батч из {batch_size} промптов (нужно ещё {still_needed})")
 
-        # Собираем батч промптов — каждый с разным набором примеров
+        # каждый промпт с разным набором примеров — для разнообразия
         prompts = [
             build_prompt(prompt_template, class_name, current_existing, context=context)
             for _ in range(batch_size)
         ]
 
-        # Батчевая генерация через vLLM
+        # всё летит на GPU одним батчем
         raw_outputs = generate_batch(llm, sampling_params, prompts, system_prompt=system_prompt)
 
-        # Собираем непустые кандидаты
+        # выкидываем пустые ответы
         candidates = [text for text in raw_outputs if text]
 
         if not candidates:
             print(f"  [Генерация] Раунд {attempt + 1}: все выходы пустые, повторяю")
             continue
 
-        # Валидируем весь батч разом
+        # прогрессивный порог сходства: первые 2 попытки строгий (0.95),
+        # потом каждую попытку +0.01, максимум 0.98
+        human_attempt = attempt + 1
+        sim_threshold = min(0.95 + max(0, human_attempt - 2) * 0.01, 0.98)
+
+        # прогоняем через фильтры (дубликаты, длина, язык, сходство и т.д.)
         valid = validate_generated_texts(
-            candidates, current_existing, class_name, n_original=n_original,
+            candidates, current_existing, class_name,
+            similarity_threshold=sim_threshold, n_original=n_original,
         )
+        n_after_validation = len(valid)
 
-        # LLM-судья оценивает и отсеивает слабые тексты
+        # LLM-судья сравнивает с оригиналами + описанием класса, выкидывает слабые
         valid = select_top_half(
-            valid, class_name, llm, sampling_params,
-            n_needed=still_needed, system_prompt=system_prompt,
+            valid, class_name, llm,
+            n_needed=still_needed, existing_texts=existing_texts,
+            context=context,
         )
 
-        # Берём только сколько нужно
         to_take = min(len(valid), still_needed)
         all_valid_texts.extend(valid[:to_take])
         current_existing.extend(valid[:to_take])
 
         print(f"  [Генерация] Раунд {attempt + 1}: "
-              f"получено {len(candidates)}, прошло валидацию {len(valid)}, "
-              f"принято {to_take}, всего {len(all_valid_texts)}/{n_needed}")
+              f"получено {len(candidates)}, после фильтров {n_after_validation}, "
+              f"после судьи {len(valid)}, принято {to_take}, "
+              f"всего {len(all_valid_texts)}/{n_needed}")
 
     if len(all_valid_texts) < n_needed:
         print(f"  [Внимание] Класс «{class_name}»: удалось сгенерировать только "
@@ -155,21 +168,28 @@ def augment_class(
     return all_valid_texts
 
 
-def run(config_path: str) -> None:
-    """
-    Основная функция этапа 1 — точка входа.
-    """
+def run(config_path: str, pipeline_cfg=None) -> None:
+    """Основная функция этапа 1."""
+    global TARGET_COUNT, MAX_RETRIES, MAX_EXAMPLES_IN_PROMPT, OVERSAMPLE_FACTOR
+
+    # применяем настройки из pipeline_config если переданы
+    if pipeline_cfg is not None:
+        s = pipeline_cfg.stage1
+        TARGET_COUNT = s.target_count
+        MAX_RETRIES = s.max_retries
+        OVERSAMPLE_FACTOR = s.oversample_factor
+        MAX_EXAMPLES_IN_PROMPT = s.max_examples_in_prompt
+
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     print("=" * 60)
-    print("ЭТАП 1: LLM-генерация (< 15 → 15)")
+    print(f"ЭТАП 1: LLM-генерация (< {TARGET_COUNT} → {TARGET_COUNT})")
     print("=" * 60)
 
-    # --- Загрузка данных ---
     df = load_dataset(stage=STAGE)
 
-    # --- Какие классы нуждаются в аугментации ---
+    # смотрим каким классам не хватает примеров
     classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
 
     if not classes_to_augment:
@@ -181,11 +201,10 @@ def run(config_path: str) -> None:
     for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
         print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
-    # --- Загрузка LLM ---
-    llm, sampling_params, system_prompt = load_llm(config_path)
+    # грузим LLM один раз — дальше переиспользуем для всех классов
+    llm, sampling_params, system_prompt = load_llm(config_path, pipeline_cfg=pipeline_cfg)
     prompt_template = load_prompt_template("llm_generate_one.txt")
 
-    # --- Генерация по классам ---
     new_rows = []
 
     for class_idx, (class_name, current_count) in enumerate(classes_to_augment.items()):
@@ -194,7 +213,7 @@ def run(config_path: str) -> None:
 
         print(f"\n[Этап 1] Класс «{class_name}»: есть {current_count}, нужно ещё {n_needed}")
 
-        # Генерируем контекст класса один раз
+        # описание класса — генерируем один раз, потом суём в каждый промпт
         context = generate_class_context(
             class_name, existing_texts, llm, sampling_params, system_prompt,
         )
@@ -221,14 +240,14 @@ def run(config_path: str) -> None:
 
         print(f"[Этап 1] Класс «{class_name}»: добавлено {len(generated)} текстов")
 
-        # Промежуточное сохранение — страховка от вылета ядра в Colab
+        # сохраняем после каждого класса — если colab упадёт, не потеряем
         if new_rows:
             df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
             save_checkpoint(df_tmp, stage=STAGE)
             print(f"[Этап 1] Промежуточное сохранение: "
                   f"{class_idx + 1} классов обработано, {len(df_tmp)} записей")
 
-    # --- Добавляем сгенерированные тексты ---
+    # финальное сохранение
     if new_rows:
         new_df = pd.DataFrame(new_rows)
         df = pd.concat([df, new_df], ignore_index=True)
@@ -236,10 +255,9 @@ def run(config_path: str) -> None:
     else:
         print("\n[Этап 1] Новых текстов не сгенерировано")
 
-    # --- Сохраняем чекпоинт ---
     save_checkpoint(df, stage=STAGE)
 
-    # --- Итоговая статистика ---
+    # итого — что получилось
     print(f"\n[Этап 1] Итоговое распределение:")
     dist = get_class_distribution(df)
     for name, count in dist.items():

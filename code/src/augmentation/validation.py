@@ -86,10 +86,7 @@ def validate_generated_texts(
     texts = filter_foreign_scripts(texts, class_name)
     texts = filter_prompt_leak(texts, class_name)
 
-    # Адаптивный порог: для классов с 1 примером — мягче (0.98)
     threshold = similarity_threshold
-    if n_original is not None and n_original == 1:
-        threshold = SIMILARITY_THRESHOLD_LOW
 
     # Косинусное сходство
     if texts and existing_texts:

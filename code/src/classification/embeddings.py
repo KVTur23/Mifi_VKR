@@ -33,7 +33,7 @@ TFIDF_PARAMS = dict(
     min_df=2,
 )
 
-CACHE_DIR = PROJECT_ROOT.parent / "Data" / ".tfidf_cache"
+CACHE_DIR = PROJECT_ROOT / "Data" / ".tfidf_cache"
 
 
 def build_vectorizer(**kwargs) -> TfidfVectorizer:
