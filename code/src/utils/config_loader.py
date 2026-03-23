@@ -56,8 +56,8 @@ def load_model_config(config_path: str) -> dict:
     # считаем, что он лежит в prompts/ относительно корня проекта
     prompt_template = config["prompt_template"]
     if not Path(prompt_template).is_absolute() and "/" not in prompt_template:
-        project_root = config_path.parent.parent
-        prompt_template = str(project_root / "prompts" / prompt_template)
+        project_root = config_path.parent.parent.parent
+        prompt_template = str(project_root / "prompts" / "aug_prompts" / prompt_template)
 
     # Возвращаем весь конфиг целиком — разные этапы могут использовать
     # свои дополнительные поля (system_prompt, use_unsloth, paraphrase_template и т.д.),

@@ -1,0 +1,88 @@
+{
+  "gpu_profiles": {
+    "T4": {
+      "vram_gb": 16,
+      "nllb_batch_size": 32,
+      "rubert_batch_size": 16,
+      "gpu_memory_utilization": 0.90,
+      "enforce_eager": true,
+      "nllb_model": "facebook/nllb-200-distilled-600M"
+    },
+    "L4": {
+      "vram_gb": 24,
+      "nllb_batch_size": 32,
+      "rubert_batch_size": 32,
+      "gpu_memory_utilization": 0.90,
+      "enforce_eager": true,
+      "nllb_model": "facebook/nllb-200-3.3B"
+    },
+    "A100_40": {
+      "vram_gb": 40,
+      "nllb_batch_size": 64,
+      "rubert_batch_size": 64,
+      "gpu_memory_utilization": 0.92,
+      "enforce_eager": true,
+      "nllb_model": "facebook/nllb-200-3.3B"
+    },
+    "A100_80": {
+      "vram_gb": 80,
+      "nllb_batch_size": 64,
+      "rubert_batch_size": 64,
+      "gpu_memory_utilization": 0.95,
+      "enforce_eager": true,
+      "nllb_model": "facebook/nllb-200-3.3B"
+    },
+    "H100": {
+      "vram_gb": 80,
+      "nllb_batch_size": 64,
+      "rubert_batch_size": 64,
+      "gpu_memory_utilization": 0.95,
+      "enforce_eager": true,
+      "nllb_model": "facebook/nllb-200-3.3B"
+    }
+  },
+
+  "pipeline": {
+    "stage1": {
+      "target_count": 15,
+      "max_retries": 5,
+      "oversample_factor": 5,
+      "max_examples_in_prompt": 5
+    },
+    "stage2": {
+      "target_count": 35,
+      "max_retries": 5,
+      "oversample_factor": 5
+    },
+    "stage3": {
+      "target_count": 50,
+      "max_retries": 20,
+      "oversample_factor": 3,
+      "min_judge_score": 2.5
+    }
+  },
+
+  "judge": {
+    "min_score": 5.0,
+    "max_examples": 5,
+    "sampling": {
+      "temperature": 0.1,
+      "top_p": 0.9,
+      "max_tokens": 8
+    }
+  },
+
+  "validation": {
+    "similarity_threshold": 0.95,
+    "similarity_threshold_max": 0.98,
+    "similarity_threshold_min": 0.5,
+    "min_text_length": 500
+  },
+
+  "training": {
+    "num_epochs": 15,
+    "learning_rate": 5e-4,
+    "max_length": 256,
+    "weight_decay": 0.01
+  }
+}

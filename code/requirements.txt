@@ -1,0 +1,14 @@
+vllm>=0.6.0                   # батчевый инференс LLM на GPU (заменяет unsloth/transformers для генерации)
+transformers>=4.40.0          # токенизаторы + NLLB-200 для обратного перевода (этап 3)
+torch>=2.1.0                  # бэкенд для всего
+accelerate>=0.27.0            # ускорение загрузки моделей
+sentencepiece>=0.1.99         # токенизатор для Qwen, NLLB и др.
+sentence-transformers>=3.0.0  # SBERT для косинусного сходства в валидации
+datasets>=4.3.0               # нужен для sentence-transformers
+pyarrow>=21.0.0               # бэкенд для datasets
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0           # SVM, LogReg, NaiveBayes, метрики классификации
+matplotlib>=3.7.0             # графики сравнения метрик
+langdetect>=1.0.9             # определение языка (фильтр в валидации)
+tqdm>=4.65.0                  # прогресс-бары

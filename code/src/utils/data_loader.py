@@ -32,8 +32,8 @@ STAGE_FILES = {
     0: "train_after_eda.csv",      # Train-часть после разбиения
 }
 
-# Путь к папке с данными — Data/ лежит на уровне code/, а не AUG/
-DATA_DIR = Path(__file__).parent.parent.parent.parent / "Data"
+# Путь к папке с данными — Data/ лежит рядом с src/
+DATA_DIR = Path(__file__).parent.parent.parent / "Data"
 
 
 def load_dataset(stage: int, data_dir: str | Path | None = None) -> pd.DataFrame:
@@ -179,7 +179,7 @@ def split_train_test(
     rng = np.random.RandomState(RANDOM_SEED)
     train_idx, test_idx = [], []
 
-    for cls in df[LABEL_COL].unique():
+    for cls in sorted(df[LABEL_COL].unique()):
         cls_indices = df[df[LABEL_COL] == cls].index.tolist()
         rng.shuffle(cls_indices)
         n_test = max(1, int(len(cls_indices) * test_size))
