@@ -14,7 +14,7 @@
       "rubert_batch_size": 32,
       "gpu_memory_utilization": 0.90,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-3.3B"
+      "nllb_model": "facebook/nllb-200-distilled-600M"
     },
     "A100_40": {
       "vram_gb": 40,
@@ -41,7 +41,6 @@
       "nllb_model": "facebook/nllb-200-3.3B"
     }
   },
-
   "pipeline": {
     "stage1": {
       "target_count": 15,
@@ -61,7 +60,6 @@
       "min_judge_score": 2.5
     }
   },
-
   "judge": {
     "min_score": 5.0,
     "max_examples": 5,
@@ -71,14 +69,12 @@
       "max_tokens": 8
     }
   },
-
   "validation": {
     "similarity_threshold": 0.95,
     "similarity_threshold_max": 0.98,
     "similarity_threshold_min": 0.5,
     "min_text_length": 500
   },
-
   "training": {
     "num_epochs": 15,
     "learning_rate": 5e-4,
