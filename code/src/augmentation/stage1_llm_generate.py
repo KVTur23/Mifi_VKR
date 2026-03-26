@@ -61,8 +61,8 @@ def generate_class_context(
     try:
         result = generate_text(llm, sampling_params, prompt, system_prompt=system_prompt)
         if result:
-            # берём только первый абзац — дальше модель иногда начинает нести
-            context = result.split("\n\n")[0].strip()
+            # склеиваем абзацы в одну строку, убираем лишние переносы
+            context = " ".join(result.strip().split("\n\n")).strip()
             print(f"  [Контекст] «{class_name}»:\n{context}\n")
             return context
     except Exception as e:

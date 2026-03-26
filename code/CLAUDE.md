@@ -106,7 +106,7 @@ data.json → data_cleaner → data_after_eda.csv → split 80/20
 | Модель | VRAM | Контекст | Загрузка |
 |---|---|---|---|
 | `IlyaGusev/saiga_llama3_8b` | ~16 GB FP16 | 8K | transformers |
-| `google/gemma-2-9b-it` | ~18 GB BF16 | 8K | transformers |
+| `IlyaGusev/saiga_mistral_7b` | ~14 GB FP16 | 32K | transformers |
 | `Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24` | ~24 GB FP16 | 32K | transformers |
 | `Qwen/Qwen2.5-14B-Instruct` | ~28 GB BF16 | 32K+ | transformers |
 | `Qwen/Qwen2.5-32B-Instruct-AWQ` | ~18-20 GB 4-bit | 32K+ | transformers (AWQ) |
@@ -131,7 +131,7 @@ data.json → data_cleaner → data_after_eda.csv → split 80/20
 
 ### Ограничения контекстного окна
 
-| Режим | ~Токенов | Saiga/Gemma (8K) | Vikhr/Qwen (32K+) |
+| Режим | ~Токенов | Saiga-LLaMA3 (8K) | Остальные (32K+) |
 |---|---|---|---|
 | zero-shot | ~2000 | ✅ | ✅ |
 | one-shot | ~9000 | ⚠️ | ✅ |
@@ -145,7 +145,7 @@ data.json → data_cleaner → data_after_eda.csv → split 80/20
 | Модель | K=0 | K=1 | K=3 | K=5 |
 |---|---|---|---|---|
 | Saiga-LLaMA3-8B | ✅ | ⚠️ | skip | skip |
-| Gemma-2-9B | ✅ | ⚠️ | skip | skip |
+| Saiga-Mistral-7B | ✅ | ✅ | ✅ | ⚠️ |
 | Vikhr-Nemo-12B | ✅ | ✅ | ✅ | ⚠️ |
 | Qwen2.5-14B | ✅ | ✅ | ✅ | ⚠️ |
 | Qwen2.5-32B-AWQ | ✅ | ✅ | ✅ | ⚠️ |
