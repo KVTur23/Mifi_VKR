@@ -117,7 +117,7 @@ def augment_class(
         print(f"  [Генерация] Раунд {attempt + 1}/{MAX_RETRIES}: "
               f"генерируем батч из {batch_size} промптов (нужно ещё {still_needed})")
 
-        # каждый промпт с разным набором примеров — для разнообразия
+        # список промптов с разным набором примеров — для разнообразия
         prompts = [
             build_prompt(prompt_template, class_name, current_existing, context=context)
             for _ in range(batch_size)
@@ -175,10 +175,10 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     # применяем настройки из pipeline_config если переданы
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage1
-        TARGET_COUNT = s.target_count
-        MAX_RETRIES = s.max_retries
-        OVERSAMPLE_FACTOR = s.oversample_factor
-        MAX_EXAMPLES_IN_PROMPT = s.max_examples_in_prompt
+        TARGET_COUNT = s.target_count  #15
+        MAX_RETRIES = s.max_retries     #5
+        OVERSAMPLE_FACTOR = s.oversample_factor     #5
+        MAX_EXAMPLES_IN_PROMPT = s.max_examples_in_prompt   #5
 
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
