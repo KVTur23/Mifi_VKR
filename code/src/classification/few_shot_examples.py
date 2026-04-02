@@ -1,10 +1,12 @@
 """
 few_shot_examples.py — Подготовка few-shot примеров для prompt-based классификации
 
-Логика групп:
-  - Группа A (50+ оригинальных train): few-shot только из оригинальных
-  - Группа B (15-49 оригинальных):     few-shot только из оригинальных
-  - Группа C (<15 оригинальных):        few-shot из оригинальных + аугментированных
+Логика отбора:
+  - Если оригинальных примеров класса >= K: берём только оригинальные.
+  - Если оригинальных < K: добираем аугментированными (приоритет оригинальным).
+
+Группы A/B/C сохраняются в JSON только для подсчёта per-group метрик,
+на отбор примеров не влияют.
 
 Сохраняет примеры в Data/few_shot_examples.json для K=1, 3, 5.
 """
@@ -53,14 +55,13 @@ def select_examples(
     df_original: pd.DataFrame,
     df_augmented: pd.DataFrame,
     k: int,
-    groups: dict[str, str],
     seed: int = RANDOM_SEED,
 ) -> dict[str, list[str]]:
     """
-    Отбирает K примеров для каждого класса с учётом группы.
+    Отбирает K примеров для каждого класса.
 
-    - Группы A и B: только из оригинальных данных.
-    - Группа C: из оригинальных + аугментированных (приоритет оригинальным).
+    Если оригинальных примеров >= K — берём только их.
+    Если меньше K — добираем из аугментированных (приоритет оригинальным).
 
     Возвращает: {class_name: [text1, text2, ..., textK]}
     """
@@ -70,15 +71,12 @@ def select_examples(
     all_classes = sorted(df_original[LABEL_COL].unique())
 
     for cls in all_classes:
-        group = groups.get(cls, "C")
-
-        # Оригинальные примеры класса
         orig_texts = df_original[df_original[LABEL_COL] == cls][TEXT_COL].tolist()
 
-        if group in ("A", "B"):
+        if len(orig_texts) >= k:
             pool = orig_texts
         else:
-            # Группа C: добираем из аугментированных, если оригинальных мало
+            # Оригинальных не хватает — добираем аугментированными
             aug_texts = df_augmented[
                 (df_augmented[LABEL_COL] == cls)
                 & (~df_augmented[TEXT_COL].isin(orig_texts))
@@ -133,14 +131,17 @@ def prepare_few_shot_examples(
     }
 
     for k in k_values:
-        examples = select_examples(df_original, df_augmented, k, groups)
+        examples = select_examples(df_original, df_augmented, k)
         result["examples"][str(k)] = examples
 
         # Статистика
         total = sum(len(v) for v in examples.values())
-        short = sum(1 for v in examples.values() if len(v) < k)
+        aug_used = sum(
+            1 for cls in examples
+            if len(df_original[df_original[LABEL_COL] == cls]) < k
+        )
         print(f"[Few-shot] K={k}: {total} примеров, "
-              f"классов с нехваткой: {short}")
+              f"классов с подмешиванием аугментированных: {aug_used}")
 
     # Сохраняем
     with open(save_path, "w", encoding="utf-8") as f:
