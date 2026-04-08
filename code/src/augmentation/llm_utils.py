@@ -40,7 +40,7 @@ def load_llm(config_path: str, pipeline_cfg=None) -> tuple:
 
     print(f"[LLM] Загружаю модель через vLLM: {model_name}")
 
-    # если в названии модели есть "awq" — vllm автоматом ставит квантизацию
+    # если в названии модели есть "awq" — vllm автоматом распаковывает квантизованные веса
     quantization = config.get("quantization", "awq" if "awq" in model_name.lower() else None)
 
     llm = LLM(
