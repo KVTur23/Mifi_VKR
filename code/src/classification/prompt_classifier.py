@@ -46,49 +46,113 @@ def load_prompt_config() -> dict:
 # Загрузка / выгрузка модели
 # ============================================================
 
+class _VLLMWrapper:
+    """Обёртка над vLLM LLM для единого интерфейса с transformers."""
+    def __init__(self, llm, use_external_tokenizer: bool = False):
+        self.llm = llm
+        self.device = "cuda"
+        # True если токенизатор загружен отдельно (skip_tokenizer_init=True в vLLM)
+        self.use_external_tokenizer = use_external_tokenizer
+
+
+def _resolve_hf_path(model_name: str) -> str:
+    """Находит локальный snapshot для HF модели в кэше."""
+    import os
+    cache_dir = os.environ.get("HF_HUB_CACHE") or os.environ.get(
+        "HUGGINGFACE_HUB_CACHE",
+        os.path.expanduser("~/.cache/huggingface/hub"),
+    )
+    repo_dir = Path(cache_dir) / f"models--{model_name.replace('/', '--')}"
+    snapshots = repo_dir / "snapshots"
+    if snapshots.exists():
+        # Берём первый (обычно единственный) snapshot
+        dirs = sorted(snapshots.iterdir())
+        if dirs:
+            return str(dirs[0])
+    return model_name
+
+
 def load_model(model_cfg: dict) -> tuple:
     """
-    Загружает модель и токенизатор через transformers.
-
-    Аргументы:
-        model_cfg: словарь из stage4.prompt_models (model_name, dtype, ...)
+    Загружает модель и токенизатор.
+    vLLM-модели (AWQ или use_vllm=true) грузятся через vLLM,
+    остальные — через transformers.
 
     Возвращает:
         (model, tokenizer)
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
     model_name = model_cfg["model_name"]
     print(f"[PromptClassifier] Загрузка модели: {model_name}")
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name, trust_remote_code=True,
-    )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    use_vllm = model_cfg.get("quantization") == "awq" or model_cfg.get("use_vllm")
 
-    # Определяем dtype
-    dtype_str = model_cfg.get("dtype", "float16")
-    dtype_map = {
-        "float16": torch.float16,
-        "bfloat16": torch.bfloat16,
-        "float32": torch.float32,
-    }
-    dtype = dtype_map.get(dtype_str, torch.float16)
-
-    load_kwargs = {
-        "trust_remote_code": True,
-        "device_map": "auto",
-    }
-
-    # AWQ-модели загружаются без указания dtype
-    if model_cfg.get("quantization") == "awq":
-        pass  # autoawq определит dtype автоматически
+    if use_vllm:
+        from vllm import LLM
+        vllm_kwargs = {
+            "model": model_name,
+            "trust_remote_code": True,
+            "max_model_len": model_cfg.get("max_context", 32768),
+        }
+        if model_cfg.get("quantization") == "awq":
+            vllm_kwargs["quantization"] = "awq"
+        if model_cfg.get("dtype"):
+            vllm_kwargs["dtype"] = model_cfg["dtype"]
+        if model_cfg.get("tensor_parallel_size"):
+            vllm_kwargs["tensor_parallel_size"] = model_cfg["tensor_parallel_size"]
+        if model_cfg.get("enforce_eager"):
+            vllm_kwargs["enforce_eager"] = True
+        # Для моделей с кастомным конфигом токенизатора
+        # vLLM не может инициализировать токенизатор сам — грузим отдельно
+        skip_tok = model_cfg.get("skip_tokenizer_init", False)
+        if skip_tok:
+            vllm_kwargs["skip_tokenizer_init"] = True
+        llm = LLM(**vllm_kwargs)
+        model = _VLLMWrapper(llm, use_external_tokenizer=skip_tok)
+        if skip_tok:
+            from transformers import AutoTokenizer
+            # Берём реальный локальный путь (vLLM разрешил HF_HUB_OFFLINE -> snapshot)
+            try:
+                resolved_path = llm.llm_engine.model_config.model
+            except AttributeError:
+                resolved_path = vllm_kwargs["model"]
+            tokenizer = AutoTokenizer.from_pretrained(resolved_path, trust_remote_code=True)
+        else:
+            tokenizer = llm.get_tokenizer()
     else:
-        load_kwargs["torch_dtype"] = dtype
-
-    model = AutoModelForCausalLM.from_pretrained(model_name, **load_kwargs)
-    model.eval()
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        load_path = model_name
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_name, trust_remote_code=True,
+            )
+        except Exception:
+            # Fallback для моделей с кастомным конфигом:
+            # AutoTokenizer не распознаёт DeepseekConfig -> tokenizer class.
+            # Читаем tokenizer_config.json и грузим класс напрямую.
+            load_path = _resolve_hf_path(model_name)
+            tok_cfg_path = Path(load_path) / "tokenizer_config.json"
+            with open(tok_cfg_path, "r", encoding="utf-8") as f:
+                tok_cfg = json.load(f)
+            tok_class_name = tok_cfg.get("tokenizer_class", "LlamaTokenizer")
+            print(f"[PromptClassifier] Fallback: загружаю {tok_class_name} из {load_path}")
+            import transformers
+            tok_class = getattr(transformers, tok_class_name)
+            tokenizer = tok_class.from_pretrained(load_path)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        dtype_map = {
+            "float16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "float32": torch.float32,
+        }
+        dtype = dtype_map.get(model_cfg.get("dtype", "float16"), torch.float16)
+        model = AutoModelForCausalLM.from_pretrained(
+            load_path,
+            trust_remote_code=True,
+            device_map="auto",
+            torch_dtype=dtype,
+        )
+        model.eval()
 
     print(f"[PromptClassifier] Модель загружена: {model_name}")
     return model, tokenizer
@@ -96,11 +160,16 @@ def load_model(model_cfg: dict) -> tuple:
 
 def unload_model(model, tokenizer):
     """Выгружает модель из GPU, освобождает память."""
+    if isinstance(model, _VLLMWrapper):
+        del model.llm
     del model
     del tokenizer
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    import time
+    time.sleep(5)
     print("[PromptClassifier] Модель выгружена, GPU память освобождена")
 
 
@@ -135,16 +204,16 @@ def format_class_descriptions(descriptions: dict[str, str], max_chars: int = 200
     return "\n".join(lines)
 
 
-def format_examples_block(examples: dict[str, list[str]]) -> str:
+def format_examples_block(examples: dict[str, list[str]], max_chars: int = 500) -> str:
     """
     Форматирует блок few-shot примеров.
     examples: {class_name: [text1, text2, ...]}
+    max_chars: максимальная длина каждого примера
     """
     lines = []
     for cls in sorted(examples.keys()):
         for text in examples[cls]:
-            # Обрезаем длинные примеры до ~500 символов
-            truncated = text[:500] + "..." if len(text) > 500 else text
+            truncated = text[:max_chars] + "..." if len(text) > max_chars else text
             lines.append(f"Письмо: {truncated}\nПодразделение: {cls}")
             lines.append("")
     return "\n".join(lines)
@@ -156,53 +225,64 @@ def build_prompt(
     descriptions: dict[str, str],
     mode: str = "zero_shot",
     examples: Optional[dict[str, list[str]]] = None,
+    no_desc: bool = False,
+    max_example_chars: int = 500,
 ) -> str:
     """
     Собирает полный промпт для классификации одного письма.
 
     Аргументы:
-        text:         текст письма для классификации
-        labels:       список всех 36 классов
-        descriptions: описания классов {class: description}
-        mode:         "zero_shot" | "one_shot" | "few_shot"
-        examples:     few-shot примеры {class: [texts]} (для one/few-shot)
+        text:             текст письма для классификации
+        labels:           список всех 36 классов
+        descriptions:     описания классов {class: description}
+        mode:             "zero_shot" | "one_shot" | "few_shot"
+        examples:         few-shot примеры {class: [texts]} (для one/few-shot)
+        no_desc:          не включать описания классов в промпт
+        max_example_chars: максимальная длина каждого примера в символах
 
     Возвращает:
         Готовый промпт-строку
     """
-    template = load_prompt_template(mode)
-
     class_list = format_class_list(labels)
-    class_desc = format_class_descriptions(descriptions)
 
     if mode == "zero_shot":
+        template = load_prompt_template("zero_shot")
         return template.format(
             class_list=class_list,
-            class_descriptions=class_desc,
+            class_descriptions=format_class_descriptions(descriptions),
             text=text,
         )
 
     elif mode == "one_shot":
-        # Берём первый пример из первого класса
+        template = load_prompt_template("one_shot")
         first_cls = sorted(examples.keys())[0]
         ex_text = examples[first_cls][0] if examples[first_cls] else ""
-        ex_text_trunc = ex_text[:500] + "..." if len(ex_text) > 500 else ex_text
+        ex_text_trunc = ex_text[:max_example_chars] + "..." if len(ex_text) > max_example_chars else ex_text
         return template.format(
             class_list=class_list,
-            class_descriptions=class_desc,
+            class_descriptions=format_class_descriptions(descriptions),
             example_text=ex_text_trunc,
             example_label=first_cls,
             text=text,
         )
 
     else:  # few_shot
-        examples_block = format_examples_block(examples)
-        return template.format(
-            class_list=class_list,
-            class_descriptions=class_desc,
-            examples_block=examples_block,
-            text=text,
-        )
+        examples_block = format_examples_block(examples, max_chars=max_example_chars)
+        if no_desc:
+            template = load_prompt_template("few_shot_no_desc")
+            return template.format(
+                class_list=class_list,
+                examples_block=examples_block,
+                text=text,
+            )
+        else:
+            template = load_prompt_template("few_shot")
+            return template.format(
+                class_list=class_list,
+                class_descriptions=format_class_descriptions(descriptions),
+                examples_block=examples_block,
+                text=text,
+            )
 
 
 # ============================================================
@@ -240,16 +320,36 @@ def generate_response(
     Оборачивает промпт в chat template модели перед генерацией.
     Возвращает текст ответа или None если промпт не влезает в контекст.
     """
-    # Оборачиваем в chat template
     formatted_prompt = apply_chat_template(tokenizer, prompt)
 
-    inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=False)
-    input_len = inputs["input_ids"].shape[1]
-
     # Проверка длины контекста
+    input_len = len(tokenizer.encode(formatted_prompt))
     if input_len >= max_context - 100:
         return None
 
+    # vLLM путь
+    if isinstance(model, _VLLMWrapper):
+        from vllm import SamplingParams
+        sampling_params = SamplingParams(
+            max_tokens=gen_params.get("max_new_tokens", 50),
+            temperature=gen_params.get("temperature", 0.1),
+            top_p=gen_params.get("top_p", 0.9),
+            repetition_penalty=gen_params.get("repetition_penalty", 1.1),
+        )
+        if model.use_external_tokenizer:
+            # skip_tokenizer_init=True: передаём token_ids и декодируем сами
+            token_ids = tokenizer.encode(formatted_prompt)
+            prompt = {"prompt_token_ids": token_ids}
+            outputs = model.llm.generate([prompt], sampling_params)
+            return tokenizer.decode(
+                outputs[0].outputs[0].token_ids, skip_special_tokens=True
+            ).strip()
+        else:
+            outputs = model.llm.generate([formatted_prompt], sampling_params)
+            return outputs[0].outputs[0].text.strip()
+
+    # transformers путь
+    inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=False)
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
     with torch.no_grad():
@@ -263,10 +363,8 @@ def generate_response(
             pad_token_id=tokenizer.pad_token_id,
         )
 
-    # Декодируем только новые токены
-    new_tokens = outputs[0][input_len:]
-    response = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-    return response
+    new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+    return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 
 def _normalize(text: str) -> str:
@@ -408,6 +506,8 @@ def classify_dataset(
     max_context: int,
     examples: Optional[dict[str, list[str]]] = None,
     fuzzy_cutoff: float = 0.7,
+    no_desc: bool = False,
+    max_example_chars: int = 500,
 ) -> pd.DataFrame:
     """
     Классифицирует все примеры из df_test.
@@ -421,7 +521,8 @@ def classify_dataset(
         text = row[TEXT_COL]
         true_label = row[LABEL_COL]
 
-        prompt = build_prompt(text, labels, descriptions, mode, examples)
+        prompt = build_prompt(text, labels, descriptions, mode, examples,
+                              no_desc=no_desc, max_example_chars=max_example_chars)
         response = generate_response(model, tokenizer, prompt, gen_params, max_context)
 
         if response is None:

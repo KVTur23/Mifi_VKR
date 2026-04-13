@@ -105,11 +105,11 @@
         "dtype": "float16",
         "vram_gb": 16
       },
-      "saiga_mistral_7b": {
-        "model_name": "IlyaGusev/saiga_mistral_7b",
+      "t_lite_8b": {
+        "model_name": "t-tech/T-lite-it-1.0",
         "max_context": 32768,
-        "dtype": "float16",
-        "vram_gb": 14
+        "dtype": "bfloat16",
+        "vram_gb": 16
       },
       "vikhr_12b": {
         "model_name": "Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24",
@@ -127,7 +127,9 @@
         "model_name": "Qwen/Qwen2.5-32B-Instruct-AWQ",
         "max_context": 32768,
         "quantization": "awq",
-        "vram_gb": 20
+        "vram_gb": 20,
+        "tensor_parallel_size": 2,
+        "enforce_eager": true
       }
     }
   }
