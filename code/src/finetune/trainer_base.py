@@ -149,7 +149,7 @@ class SeqClsRunner:
             args=args,
             train_dataset=self.train_ds,
             eval_dataset=self.eval_ds,
-            tokenizer=self.tokenizer,
+            processing_class=self.tokenizer,
             data_collator=self.collator,
             compute_metrics=compute_metrics,
             callbacks=[EarlyStoppingCallback(

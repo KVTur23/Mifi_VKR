@@ -74,15 +74,17 @@ def build_peft_config(cfg: dict, total_step: int | None = None):
     - adalora       → AdaLoraConfig(**peft_config), total_step подставляется динамически
     - tinylora      → TinyLoraConfig с выборочной передачей полей
     """
-    from peft import LoraConfig, AdaLoraConfig, TinyLoraConfig, TaskType
+    from peft import TaskType
 
     method = cfg["method"]
     pc = cfg["peft_config"]
 
     if method in ("lora", "qlora"):
+        from peft import LoraConfig
         return LoraConfig(task_type=TaskType.SEQ_CLS, **pc)
 
     if method == "adalora":
+        from peft import AdaLoraConfig
         pc = dict(pc)
         if pc.get("total_step") is None:
             if total_step is None:
@@ -91,6 +93,7 @@ def build_peft_config(cfg: dict, total_step: int | None = None):
         return AdaLoraConfig(task_type=TaskType.SEQ_CLS, **pc)
 
     if method == "tinylora":
+        from peft import TinyLoraConfig
         return TinyLoraConfig(
             task_type=TaskType.SEQ_CLS,
             r=pc["r"],
