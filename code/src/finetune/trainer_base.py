@@ -177,10 +177,24 @@ class SeqClsRunner:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
     def run(self):
+        import gc
+        import torch
+
         from .evaluate_finetuned import evaluate
 
         self.prepare()
         self.train()
+
+        # Освобождаем GPU перед eval: train-копия модели + optimizer states
+        # держат ~25-30GB для 32B QLoRA, а evaluate грузит базовую модель ещё раз.
+        self.model = None
+        self.train_ds = None
+        self.eval_ds = None
+        self.collator = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         return evaluate(
             adapter_dir=str(self.output_dir),
             config_path=self.config_path,

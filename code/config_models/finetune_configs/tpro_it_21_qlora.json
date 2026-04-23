@@ -1,5 +1,5 @@
 {
-  "model_name": "Qwen/Qwen3-32B",
+  "model_name": "t-tech/T-pro-it-2.1",
   "method": "qlora",
   "task_type": "SEQ_CLS",
   "num_labels": 36,
