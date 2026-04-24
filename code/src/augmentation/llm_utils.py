@@ -97,10 +97,13 @@ def generate_batch(
     # собираем chat-сообщения: system (если есть) + user
     conversations = []
     for prompt in prompts:
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        sys_content = system_prompt or ""
+        if "/no_think" not in sys_content:
+            sys_content = (sys_content + "\n/no_think").strip()
+        messages = [
+            {"role": "system", "content": sys_content},
+            {"role": "user", "content": prompt},
+        ]
         conversations.append(messages)
 
     try:
