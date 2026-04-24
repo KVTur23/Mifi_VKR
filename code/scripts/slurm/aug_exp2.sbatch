@@ -28,9 +28,10 @@ NEEDED_MODELS=(
   "models--ai-forever--sbert_large_nlu_ru"
 )
 
+# per-exp окружение, чтобы 4 параллельных джоба не пересекались в cache
 export HOME=$POOL
-export XDG_CACHE_HOME=/tmp/kvt/cache
-export HF_HOME=/tmp/kvt/hf
+export XDG_CACHE_HOME=/tmp/kvt/exp2/cache
+export HF_HOME=/tmp/kvt/exp2/hf
 export HF_HUB_CACHE=$MODELS_DST
 export HUGGINGFACE_HUB_CACHE=$MODELS_DST
 export TRANSFORMERS_OFFLINE=1
@@ -41,19 +42,25 @@ echo "=== SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
 nvidia-smi | head -20
 
 echo "=== $(date) | PRE: rsync кода и моделей ==="
-mkdir -p $CODE_DST $MODELS_DST /tmp/kvt/hf /tmp/kvt/cache
+mkdir -p $CODE_DST $MODELS_DST $XDG_CACHE_HOME $HF_HOME
 
 rm -rf $CODE_DST
 cp -r $CODE_SRC $CODE_DST
 mkdir -p $CODE_DST/Data $CODE_DST/logs $CODE_DST/results
 
-for m in "${NEEDED_MODELS[@]}"; do
-  if [ -d "$MODELS_SRC/$m" ]; then
-    rsync -a --info=progress2 "$MODELS_SRC/$m/" "$MODELS_DST/$m/"
-  else
-    echo "[WARN] $MODELS_SRC/$m не найдена — пропускаю"
-  fi
-done
+# Shared /tmp/kvt/models между 4 параллельными джобами — flock сериализует rsync.
+(
+  flock 200
+  echo "  [flock] got models lock"
+  for m in "${NEEDED_MODELS[@]}"; do
+    if [ -d "$MODELS_SRC/$m" ]; then
+      rsync -a "$MODELS_SRC/$m/" "$MODELS_DST/$m/"
+    else
+      echo "  [WARN] $MODELS_SRC/$m не найдена — пропускаю"
+    fi
+  done
+  echo "  [flock] models sync done"
+) 200>/tmp/kvt/models.lock
 echo "Модели в /tmp: $(du -sh $MODELS_DST | cut -f1)"
 
 source $POOL/VKR/venv/bin/activate
