@@ -183,6 +183,120 @@ def back_translate_llm(texts: list[str], llm, sampling_params) -> list[str]:
     return result
 
 
+# --- llama.cpp-translator (для GGUF-квантов типа YanoljaNEXT-Rosetta-20B-GGUF) ---
+
+def load_llamacpp_translator(translator_cfg: dict) -> tuple:
+    """
+    Грузит GGUF-модель через llama-cpp-python с CUDA-offload.
+
+    Ожидает в translator_cfg одно из двух:
+      - model_path: полный путь до .gguf файла (с возможным glob * в snapshot-хеше)
+      - ИЛИ model_repo (например "models--mradermacher--YanoljaNEXT-Rosetta-20B-GGUF")
+        + model_file ("YanoljaNEXT-Rosetta-20B.Q4_K_M.gguf")
+        — тогда файл ищется в $HF_HUB_CACHE/<repo>/snapshots/*/<file>.
+
+    Дополнительно:
+      - max_seq_length (опц.): контекст (n_ctx), дефолт 4096
+      - n_gpu_layers (опц.): сколько слоёв на GPU, -1 = все (дефолт -1)
+    """
+    import glob
+    import os
+    from llama_cpp import Llama
+
+    model_path = translator_cfg.get("model_path")
+    if not model_path:
+        # собираем из repo+file через HF_HUB_CACHE
+        repo = translator_cfg["model_repo"]
+        fname = translator_cfg["model_file"]
+        cache = os.environ.get("HF_HUB_CACHE") or os.environ.get("HUGGINGFACE_HUB_CACHE") or ""
+        model_path = os.path.join(cache, repo, "snapshots", "*", fname)
+
+    # резолвим glob — llama.cpp ждёт конкретный файл
+    if "*" in model_path:
+        matches = glob.glob(model_path)
+        if not matches:
+            raise FileNotFoundError(f"GGUF не найден по шаблону: {model_path}")
+        model_path = matches[0]
+        print(f"[Перевод/llama.cpp] Найден GGUF: {model_path}")
+
+    n_ctx = translator_cfg.get("max_seq_length", 4096)
+    n_gpu_layers = translator_cfg.get("n_gpu_layers", -1)
+
+    print(f"[Перевод/llama.cpp] Загружаю GGUF: {model_path}")
+    print(f"[Перевод/llama.cpp] n_ctx={n_ctx}, n_gpu_layers={n_gpu_layers}")
+
+    llm = Llama(
+        model_path=model_path,
+        n_ctx=n_ctx,
+        n_gpu_layers=n_gpu_layers,
+        verbose=False,
+    )
+
+    gen_params = {
+        "max_tokens": translator_cfg.get("max_new_tokens", 2048),
+        "temperature": translator_cfg.get("temperature", 0.3),
+        "top_p": translator_cfg.get("top_p", 0.9),
+    }
+    print(f"[Перевод/llama.cpp] GGUF-модель загружена")
+    return llm, gen_params
+
+
+def unload_llamacpp(llm) -> None:
+    """Выгружает GGUF-модель — освобождаем VRAM под судью vLLM."""
+    try:
+        if hasattr(llm, "close"):
+            llm.close()
+        elif hasattr(llm, "__del__"):
+            llm.__del__()
+    except Exception:
+        pass
+    del llm
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+    print("[GPU] llama.cpp-модель выгружена")
+
+
+def back_translate_llamacpp(texts: list[str], llm, gen_params: dict) -> list[str]:
+    """
+    RU→EN→RU через llama-cpp-python. Без батчинга — llama.cpp идёт последовательно.
+    Для ~20 классов по 50 переводов на класс это ~1000 промптов × 2 направления = 2000 вызовов,
+    заметно медленнее vLLM-пути, но единственный вариант для GGUF-моделей.
+    """
+    masked_texts = []
+    all_placeholders = []
+    for text in texts:
+        masked, phs = mask_placeholders(text)
+        masked_texts.append(masked)
+        all_placeholders.append(phs)
+
+    # RU → EN
+    en_texts = []
+    for t in tqdm(masked_texts, desc="    RU→EN (llama.cpp)", leave=False):
+        try:
+            out = llm(TRANSLATE_PROMPT_RU_EN.format(text=t), **gen_params)
+            en_texts.append(out["choices"][0]["text"].strip())
+        except Exception as e:
+            print(f"  [llama.cpp] Ошибка RU→EN: {e}")
+            en_texts.append("")
+
+    # EN → RU
+    ru_texts = []
+    for t in tqdm(en_texts, desc="    EN→RU (llama.cpp)", leave=False):
+        try:
+            out = llm(TRANSLATE_PROMPT_EN_RU.format(text=t or ""), **gen_params)
+            ru_texts.append(out["choices"][0]["text"].strip())
+        except Exception as e:
+            print(f"  [llama.cpp] Ошибка EN→RU: {e}")
+            ru_texts.append("")
+
+    result = []
+    for text, phs in zip(ru_texts, all_placeholders):
+        result.append(unmask_placeholders((text or "").strip(), phs))
+    return result
+
+
 def load_translation_models() -> tuple:
     """Грузит NLLB-200 на GPU (или CPU если нет)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -426,11 +540,17 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
         model_cfg_for_tr = load_model_config(config_path)
         translator_cfg = model_cfg_for_tr.get("translator") or {}
-        use_llm_translator = translator_cfg.get("backend") == "llm"
+        backend = translator_cfg.get("backend")
+        use_llm_translator = backend == "llm"
+        use_llamacpp_translator = backend == "llama_cpp"
 
         if use_llm_translator:
             llm_tr, sp_tr = load_llm_translator(translator_cfg, pipeline_cfg)
             translate_fn = lambda srcs: back_translate_llm(srcs, llm_tr, sp_tr)
+            model = tokenizer = device = None
+        elif use_llamacpp_translator:
+            llm_tr, gen_params_tr = load_llamacpp_translator(translator_cfg)
+            translate_fn = lambda srcs: back_translate_llamacpp(srcs, llm_tr, gen_params_tr)
             model = tokenizer = device = None
         else:
             model, tokenizer, device = load_translation_models()
@@ -524,6 +644,11 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         print("\n[Этап 3] Фаза 1 завершена, выгружаем переводчик...")
         if use_llm_translator:
             unload_vllm(llm_tr)
+            llm_tr = None
+            unload_from_gpu(sbert_model)
+            sbert_model = None
+        elif use_llamacpp_translator:
+            unload_llamacpp(llm_tr)
             llm_tr = None
             unload_from_gpu(sbert_model)
             sbert_model = None
