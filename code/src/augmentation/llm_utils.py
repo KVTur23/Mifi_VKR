@@ -43,11 +43,16 @@ def load_llm(config_path: str, pipeline_cfg=None) -> tuple:
     # если в названии модели есть "awq" — vllm автоматом распаковывает квантизованные веса
     quantization = config.get("quantization", "awq" if "awq" in model_name.lower() else None)
 
+    # AWQ в vLLM поддерживает только float16. bfloat16 (как в config.json у некоторых AWQ-моделей,
+    # например RuadaptQwen3-32B-Instruct-AWQ) валит загрузку. Явно форсим fp16 для AWQ.
+    dtype = config.get("dtype", "float16" if quantization == "awq" else "auto")
+
     llm = LLM(
         model=model_name,
         trust_remote_code=True,
         max_model_len=config.get("max_seq_length", 4096),
         quantization=quantization,
+        dtype=dtype,
         gpu_memory_utilization=gpu_mem,
         enforce_eager=eager,
     )
