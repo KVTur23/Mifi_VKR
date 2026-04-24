@@ -134,7 +134,7 @@ JUDGE_PARAPHRASE_PROMPT = "judge_paraphrase.txt"
 MIN_JUDGE_SCORE = 5.0  # ниже этого — мусор, отсеиваем всегда
 
 # для судьи нужна низкая temperature — что бы оценки были стабильные
-_JUDGE_SAMPLING = dict(temperature=0.1, top_p=0.9, max_tokens=8)
+_JUDGE_SAMPLING = dict(temperature=0.1, top_p=0.9, max_tokens=32)
 
 
 MAX_JUDGE_EXAMPLES = 5  # сколько оригиналов показываем судье для сравнения
@@ -179,7 +179,7 @@ def score_texts_batch(
     ]
 
     # батчем на GPU — ответ всего 1-2 токена, очень быстро
-    raw_scores = generate_batch(llm, judge_sp, prompts)
+    raw_scores = generate_batch(llm, judge_sp, prompts, system_prompt="/no_think")
 
     scored = []
     for text, raw in zip(texts, raw_scores):
@@ -268,7 +268,7 @@ def select_top_paraphrases(
         for para, orig in zip(paraphrases, originals)
     ]
 
-    raw_scores = generate_batch(llm, judge_sp, prompts)
+    raw_scores = generate_batch(llm, judge_sp, prompts, system_prompt="/no_think")
 
     scored = []
     for para, raw in zip(paraphrases, raw_scores):
