@@ -185,9 +185,9 @@ class SeqClsRunner:
         self.prepare()
         self.train()
 
-        # Освобождаем GPU перед eval: train-копия модели + optimizer states
-        # держат ~25-30GB для 32B QLoRA, а evaluate грузит базовую модель ещё раз.
-        self.model = None
+        # Не перезагружаем базовую модель для eval — это давало OOM/hang на
+        # 32B QLoRA и 12B LoRA. load_best_model_at_end=True гарантирует, что
+        # self.model уже содержит лучший чекпоинт.
         self.train_ds = None
         self.eval_ds = None
         self.collator = None
@@ -200,4 +200,6 @@ class SeqClsRunner:
             config_path=self.config_path,
             pipeline_cfg=self.pipeline_cfg,
             run_key=self.run_key,
+            model=self.model,
+            tokenizer=self.tokenizer,
         )

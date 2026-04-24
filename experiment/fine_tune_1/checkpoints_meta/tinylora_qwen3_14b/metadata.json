@@ -1,0 +1,7 @@
+{
+  "method": "tinylora",
+  "model_name": "Qwen/Qwen3-14B",
+  "run_key": "tinylora_qwen3_14b",
+  "trainable_params": 185600,
+  "train_time_sec": 7576.913018465042
+}

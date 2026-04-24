@@ -1,0 +1,54 @@
+=== SLURM 28264 | host=t2n1 | Tue Apr 21 04:37:05 PM MSK 2026 ===
+Tue Apr 21 16:37:05 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:41:00.0 Off |                    0 |
+| N/A   21C    P0             33W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[Orchestrator] GPU профиль: A100_40
+[Orchestrator] Методы: ['qlora']
+[Orchestrator] force=False, уже готово: —
+
+############################################################
+# МЕТОД: qlora  (run_key=qlora_qwen3_32b)
+############################################################
+[Данные] Найден чекпоинт этапа 3: data_after_stage3.csv (2335 записей)
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+[Данные] Найден чекпоинт этапа 0: train_after_eda.csv (1409 записей)
+trainable params: 134,402,048 || all params: 32,118,797,312 || trainable%: 0.4185
+{'loss': '55.71', 'grad_norm': '440.8', 'learning_rate': '8.571e-05', 'epoch': '0.06849'}
+{'loss': '38.68', 'grad_norm': '236.9', 'learning_rate': '0.000181', 'epoch': '0.137'}
+{'loss': '31.24', 'grad_norm': '293.1', 'learning_rate': '0.0001999', 'epoch': '0.2055'}
+{'loss': '26.95', 'grad_norm': '181.8', 'learning_rate': '0.0001997', 'epoch': '0.274'}
+{'loss': '24.64', 'grad_norm': '140.8', 'learning_rate': '0.0001992', 'epoch': '0.3425'}
+{'loss': '24.24', 'grad_norm': '128.4', 'learning_rate': '0.0001986', 'epoch': '0.411'}
+{'loss': '25.1', 'grad_norm': '183.6', 'learning_rate': '0.0001977', 'epoch': '0.4795'}
+{'loss': '24.45', 'grad_norm': '104', 'learning_rate': '0.0001967', 'epoch': '0.5479'}
+{'loss': '24.06', 'grad_norm': '127.2', 'learning_rate': '0.0001955', 'epoch': '0.6164'}
+{'loss': '18.84', 'grad_norm': '104.1', 'learning_rate': '0.0001941', 'epoch': '0.6849'}
+{'loss': '17.39', 'grad_norm': '141.6', 'learning_rate': '0.0001925', 'epoch': '0.7534'}
+{'loss': '14.56', 'grad_norm': '111.5', 'learning_rate': '0.0001907', 'epoch': '0.8219'}
+{'loss': '14.19', 'grad_norm': '114.5', 'learning_rate': '0.0001888', 'epoch': '0.8904'}
+{'loss': '12.72', 'grad_norm': '123.5', 'learning_rate': '0.0001866', 'epoch': '0.9589'}
+{'eval_loss': '1.778', 'eval_balanced_accuracy': '0.3875', 'eval_macro_f1': '0.3201', 'eval_runtime': '173.9', 'eval_samples_per_second': '1.961', 'eval_steps_per_second': '0.495', 'epoch': '1'}
+[ERROR][FileNotFoundError] Метод qlora упал: [Errno 2] No such file or directory: 'Data'
+[Orchestrator] Продолжаю со следующим методом...
+
+============================================================
+ИТОГО
+============================================================
+(пусто — ни один метод не завершился успешно)

@@ -128,14 +128,17 @@ def _append_result_row(results_csv: Path, row: dict):
 
 
 def evaluate(adapter_dir: str, config_path: str, pipeline_cfg,
-             run_key: str) -> dict:
+             run_key: str,
+             model=None, tokenizer=None) -> dict:
     """
     Инференс на test + метрики + per-group F1 + classification_report.
 
     Артефакты:
       - results/preds_<run_key>.csv       — per-sample предсказания
       - results/finetune_results.csv      — агрегированные метрики (инкрементально)
-    Возвращает dict с метриками.
+
+    Если model/tokenizer переданы — используем их (in-memory, после train()).
+    Иначе грузим из adapter_dir. Перезагрузка экономит память и исключает OOM-hang.
     """
     from sklearn.metrics import balanced_accuracy_score, f1_score, classification_report
 
@@ -156,14 +159,16 @@ def evaluate(adapter_dir: str, config_path: str, pipeline_cfg,
 
     df_test = load_test_set()
 
-    model, tokenizer = load_finetuned_model(
-        adapter_dir=str(adapter_dir),
-        base_model_name=cfg["model_name"],
-        quantization_cfg=cfg.get("quantization"),
-        num_labels=num_labels,
-        id2label=id2label,
-        label2id=label2id,
-    )
+    if model is None or tokenizer is None:
+        model, tokenizer = load_finetuned_model(
+            adapter_dir=str(adapter_dir),
+            base_model_name=cfg["model_name"],
+            quantization_cfg=cfg.get("quantization"),
+            num_labels=num_labels,
+            id2label=id2label,
+            label2id=label2id,
+        )
+    model.eval()
 
     gpu_name = pipeline_cfg["gpu_name"]
     profile = pipeline_cfg["finetune"][gpu_name]

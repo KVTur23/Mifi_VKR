@@ -1,0 +1,7 @@
+{
+  "method": "adalora",
+  "model_name": "Qwen/Qwen3-32B",
+  "run_key": "adalora_qwen3_32b",
+  "trainable_params": 100852992,
+  "train_time_sec": 24483.78326535225
+}

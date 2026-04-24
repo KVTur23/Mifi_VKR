@@ -1,0 +1,8 @@
+run_key,method,model,best_round,balanced_accuracy,macro_f1,f1_group_A,f1_group_B,f1_group_C,trainable_params,source_config
+lora_qwen3_14b,lora,Qwen/Qwen3-14B,R3,0.5378,0.5186,0.7256,0.5405,0.5056,64409600,best_finetune_configs/qwen3_14b_lora.json
+qlora_qwen3_32b,qlora,Qwen/Qwen3-32B,R1,0.5615,0.5228,0.7255,0.5246,0.6250,134402048,best_finetune_configs/qwen3_32b_qlora.json
+adalora_qwen3_32b,adalora,Qwen/Qwen3-32B,R1,0.4940,0.4783,0.7404,0.5114,0.4500,100852992,best_finetune_configs/qwen3_32b_adalora.json
+qlora_tpro_it_21,qlora,t-tech/T-pro-it-2.1,R3,0.5299,0.5295,0.7306,0.4661,0.5972,268619776,best_finetune_configs/tpro_it_21_qlora.json
+adalora_tpro_it_21,adalora,t-tech/T-pro-it-2.1,R3,0.4489,0.4167,0.6408,0.5255,0.3472,134409216,best_finetune_configs/tpro_it_21_adalora.json
+lora_vikhr_nemo_12b,lora,Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24,R3,0.5078,0.4733,0.7253,0.4959,0.4583,57200640,best_finetune_configs/vikhr_nemo_12b_lora.json
+tinylora_qwen3_14b,tinylora,Qwen/Qwen3-14B,R1,0.2378,0.2341,0.5195,0.2961,0.0833,185600,best_finetune_configs/qwen3_14b_tinylora.json

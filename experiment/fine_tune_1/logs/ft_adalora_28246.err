@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/tmp/kvt/code/scripts/run_finetune.py", line 51, in <module>
+    main()
+    ~~~~^^
+  File "/tmp/kvt/code/scripts/run_finetune.py", line 44, in main
+    df = run_finetune(methods=args.methods, gpu=args.gpu, force=args.force)
+  File "/tmp/kvt/code/src/finetune/orchestrator.py", line 141, in run_finetune
+    pipeline_cfg = _load_pipeline_cfg(gpu)
+  File "/tmp/kvt/code/src/finetune/orchestrator.py", line 47, in _load_pipeline_cfg
+    raise ValueError("pipeline_config.json не содержит секции 'finetune'")
+ValueError: pipeline_config.json не содержит секции 'finetune'

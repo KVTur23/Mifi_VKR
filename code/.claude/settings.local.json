@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('src/augmentation/stage3_back_translation.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Read(//Users/kvt/Documents/VKR/experiment/fine_tune_2/**)",
+      "Read(//Users/kvt/Documents/VKR/experiment/fine_tune_3/**)"
+    ]
+  }
+}

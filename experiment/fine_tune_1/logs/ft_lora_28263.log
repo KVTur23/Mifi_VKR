@@ -1,0 +1,70 @@
+=== SLURM 28263 | host=t2n1 | Tue Apr 21 04:37:05 PM MSK 2026 ===
+Tue Apr 21 16:37:06 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:61:00.0 Off |                    0 |
+| N/A   20C    P0             33W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[Orchestrator] GPU профиль: A100_40
+[Orchestrator] Методы: ['lora']
+[Orchestrator] force=False, уже готово: —
+
+############################################################
+# МЕТОД: lora  (run_key=lora_qwen3_14b)
+############################################################
+[Данные] Найден чекпоинт этапа 3: data_after_stage3.csv (2335 записей)
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+[Данные] Найден чекпоинт этапа 0: train_after_eda.csv (1409 записей)
+trainable params: 64,409,600 || all params: 14,054,988,800 || trainable%: 0.4583
+{'loss': '40.68', 'grad_norm': '335.2', 'learning_rate': '4.286e-05', 'epoch': '0.06849'}
+{'loss': '37.6', 'grad_norm': '218.3', 'learning_rate': '9.048e-05', 'epoch': '0.137'}
+{'loss': '31.07', 'grad_norm': '195.9', 'learning_rate': '9.997e-05', 'epoch': '0.2055'}
+{'loss': '27.95', 'grad_norm': '177.3', 'learning_rate': '9.984e-05', 'epoch': '0.274'}
+{'loss': '27.11', 'grad_norm': '156.3', 'learning_rate': '9.962e-05', 'epoch': '0.3425'}
+{'loss': '25.87', 'grad_norm': '153.2', 'learning_rate': '9.929e-05', 'epoch': '0.411'}
+{'loss': '26.36', 'grad_norm': '168.2', 'learning_rate': '9.887e-05', 'epoch': '0.4795'}
+{'loss': '25.35', 'grad_norm': '144.9', 'learning_rate': '9.836e-05', 'epoch': '0.5479'}
+{'loss': '24.55', 'grad_norm': '182', 'learning_rate': '9.775e-05', 'epoch': '0.6164'}
+{'loss': '23.31', 'grad_norm': '154.9', 'learning_rate': '9.704e-05', 'epoch': '0.6849'}
+{'loss': '23.43', 'grad_norm': '188.6', 'learning_rate': '9.625e-05', 'epoch': '0.7534'}
+{'loss': '22.99', 'grad_norm': '148.1', 'learning_rate': '9.536e-05', 'epoch': '0.8219'}
+{'loss': '21.64', 'grad_norm': '136.3', 'learning_rate': '9.438e-05', 'epoch': '0.8904'}
+{'loss': '20.26', 'grad_norm': '167.6', 'learning_rate': '9.332e-05', 'epoch': '0.9589'}
+{'eval_loss': '2.629', 'eval_balanced_accuracy': '0.1732', 'eval_macro_f1': '0.1594', 'eval_runtime': '65.87', 'eval_samples_per_second': '5.177', 'eval_steps_per_second': '1.306', 'epoch': '1'}
+{'loss': '19.04', 'grad_norm': '116.5', 'learning_rate': '9.217e-05', 'epoch': '1.027'}
+{'loss': '15.52', 'grad_norm': '156.9', 'learning_rate': '9.094e-05', 'epoch': '1.096'}
+{'loss': '13.21', 'grad_norm': '141.6', 'learning_rate': '8.963e-05', 'epoch': '1.164'}
+{'loss': '12.83', 'grad_norm': '232.3', 'learning_rate': '8.824e-05', 'epoch': '1.233'}
+{'loss': '12.2', 'grad_norm': '163.2', 'learning_rate': '8.677e-05', 'epoch': '1.301'}
+{'loss': '10.32', 'grad_norm': '225.5', 'learning_rate': '8.524e-05', 'epoch': '1.37'}
+{'loss': '11.03', 'grad_norm': '205.5', 'learning_rate': '8.363e-05', 'epoch': '1.438'}
+{'loss': '8.006', 'grad_norm': '219.6', 'learning_rate': '8.196e-05', 'epoch': '1.507'}
+{'loss': '10.8', 'grad_norm': '207.6', 'learning_rate': '8.023e-05', 'epoch': '1.575'}
+{'loss': '8.081', 'grad_norm': '170.4', 'learning_rate': '7.843e-05', 'epoch': '1.644'}
+{'loss': '8.899', 'grad_norm': '164.4', 'learning_rate': '7.658e-05', 'epoch': '1.712'}
+{'loss': '7.445', 'grad_norm': '105.2', 'learning_rate': '7.468e-05', 'epoch': '1.781'}
+{'loss': '8.01', 'grad_norm': '184.1', 'learning_rate': '7.273e-05', 'epoch': '1.849'}
+{'loss': '7.267', 'grad_norm': '160.7', 'learning_rate': '7.073e-05', 'epoch': '1.918'}
+{'loss': '7.869', 'grad_norm': '132.9', 'learning_rate': '6.87e-05', 'epoch': '1.986'}
+{'eval_loss': '1.782', 'eval_balanced_accuracy': '0.2862', 'eval_macro_f1': '0.2936', 'eval_runtime': '65.8', 'eval_samples_per_second': '5.183', 'eval_steps_per_second': '1.307', 'epoch': '2'}
+[ERROR][FileNotFoundError] Метод lora упал: [Errno 2] No such file or directory: 'Data'
+[Orchestrator] Продолжаю со следующим методом...
+
+============================================================
+ИТОГО
+============================================================
+(пусто — ни один метод не завершился успешно)

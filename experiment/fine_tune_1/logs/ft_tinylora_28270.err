@@ -1,0 +1,15 @@
+`torch_dtype` is deprecated! Use `dtype` instead!
+Skipping import of cpp extensions due to incompatible torch version. Please upgrade to torch >= 2.11.0 (found 2.10.0+cu128).
+Loading weights:   0%|          | 0/442 [00:00<?, ?it/s]Loading weights: 100%|██████████| 442/442 [00:00<00:00, 7728.47it/s]
+[1mQwen3ForSequenceClassification LOAD REPORT[0m from: Qwen/Qwen3-14B
+Key            | Status     | 
+---------------+------------+-
+lm_head.weight | UNEXPECTED | 
+score.weight   | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+Map:   0%|          | 0/2335 [00:00<?, ? examples/s]Map:  43%|████▎     | 1000/2335 [00:01<00:02, 664.37 examples/s]Map:  86%|████████▌ | 2000/2335 [00:02<00:00, 876.70 examples/s]Map: 100%|██████████| 2335/2335 [00:02<00:00, 987.46 examples/s]Map: 100%|██████████| 2335/2335 [00:02<00:00, 904.18 examples/s]
+Map:   0%|          | 0/341 [00:00<?, ? examples/s]Map: 100%|██████████| 341/341 [00:00<00:00, 677.42 examples/s]Map: 100%|██████████| 341/341 [00:00<00:00, 667.73 examples/s]
+slurmstepd-t2n1: error: *** JOB 28270 ON t2n1 CANCELLED AT 2026-04-21T18:21:01 ***

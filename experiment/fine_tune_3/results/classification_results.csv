@@ -1,0 +1,11 @@
+stage,model,balanced_accuracy,macro_f1
+baseline,Linear SVM,0.482,0.453
+baseline,Logistic Regression,0.4541,0.4616
+baseline,Multinomial Naive Bayes,0.4652,0.4612
+baseline,rubert-tiny2,0.5027,0.4497
+baseline,rubert-base,0.5221,0.4696
+augmented,Linear SVM,0.482,0.453
+augmented,Logistic Regression,0.4541,0.4616
+augmented,Multinomial Naive Bayes,0.4652,0.4612
+augmented,rubert-tiny2,0.5027,0.4497
+augmented,rubert-base,0.5221,0.4696

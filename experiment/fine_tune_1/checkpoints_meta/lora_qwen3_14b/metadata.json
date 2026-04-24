@@ -1,0 +1,7 @@
+{
+  "method": "lora",
+  "model_name": "Qwen/Qwen3-14B",
+  "run_key": "lora_qwen3_14b",
+  "trainable_params": 64409600,
+  "train_time_sec": 6618.402010440826
+}
