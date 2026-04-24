@@ -97,17 +97,21 @@ def generate_batch(
     # собираем chat-сообщения: system (если есть) + user
     conversations = []
     for prompt in prompts:
-        sys_content = system_prompt or ""
-        if "/no_think" not in sys_content:
-            sys_content = (sys_content + "\n/no_think").strip()
-        messages = [
-            {"role": "system", "content": sys_content},
-            {"role": "user", "content": prompt},
-        ]
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         conversations.append(messages)
 
+    # Qwen3 по умолчанию включает reasoning — ответ обёрнут в <think>...</think>,
+    # из-за этого судья с max_tokens=32 ставит 0 всем, а парафразы приходят пустыми.
+    # chat_template_kwargs={"enable_thinking": False} — штатный параметр Qwen3
+    # chat-template (vLLM прокидывает его в apply_chat_template). Для не-Qwen3
+    # моделей jinja2 chat-template игнорирует неизвестный kwarg, не ломается.
+    chat_kwargs = {"chat_template_kwargs": {"enable_thinking": False}}
+
     try:
-        outputs = llm.chat(conversations, sampling_params)
+        outputs = llm.chat(conversations, sampling_params, **chat_kwargs)
     except Exception as e:
         # если весь батч упал (например один промпт слишком длинный) —
         # пробуем по одному, что бы не терять весь батч из-за одного
@@ -115,7 +119,7 @@ def generate_batch(
         results = []
         for conv in conversations:
             try:
-                out = llm.chat([conv], sampling_params)
+                out = llm.chat([conv], sampling_params, **chat_kwargs)
                 text = out[0].outputs[0].text.strip() if out[0].outputs else None
                 results.append(text if text else None)
             except Exception:
@@ -182,7 +186,7 @@ def score_texts_batch(
     ]
 
     # батчем на GPU — ответ всего 1-2 токена, очень быстро
-    raw_scores = generate_batch(llm, judge_sp, prompts, system_prompt="/no_think")
+    raw_scores = generate_batch(llm, judge_sp, prompts)
 
     scored = []
     for text, raw in zip(texts, raw_scores):
@@ -271,7 +275,7 @@ def select_top_paraphrases(
         for para, orig in zip(paraphrases, originals)
     ]
 
-    raw_scores = generate_batch(llm, judge_sp, prompts, system_prompt="/no_think")
+    raw_scores = generate_batch(llm, judge_sp, prompts)
 
     scored = []
     for para, raw in zip(paraphrases, raw_scores):
