@@ -1,0 +1,178 @@
+=== SLURM 28273 | host=t2n1 | Tue Apr 21 06:19:45 PM MSK 2026 ===
+Tue Apr 21 18:19:45 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:41:00.0 Off |                    0 |
+| N/A   21C    P0             33W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[Orchestrator] GPU профиль: A100_40
+[Orchestrator] Методы: ['qlora']
+[Orchestrator] force=False, уже готово: —
+
+############################################################
+# МЕТОД: qlora  (run_key=qlora_qwen3_32b)
+############################################################
+[Данные] Найден чекпоинт этапа 3: data_after_stage3.csv (2335 записей)
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+[Данные] Найден чекпоинт этапа 0: train_after_eda.csv (1409 записей)
+trainable params: 134,402,048 || all params: 32,118,797,312 || trainable%: 0.4185
+{'loss': '48.47', 'grad_norm': '413.6', 'learning_rate': '8.571e-05', 'epoch': '0.06849'}
+{'loss': '37.99', 'grad_norm': '236.3', 'learning_rate': '0.000181', 'epoch': '0.137'}
+{'loss': '30.79', 'grad_norm': '251.5', 'learning_rate': '0.0001999', 'epoch': '0.2055'}
+{'loss': '26.8', 'grad_norm': '196.1', 'learning_rate': '0.0001997', 'epoch': '0.274'}
+{'loss': '25.17', 'grad_norm': '156.8', 'learning_rate': '0.0001992', 'epoch': '0.3425'}
+{'loss': '23.84', 'grad_norm': '133.6', 'learning_rate': '0.0001986', 'epoch': '0.411'}
+{'loss': '24.72', 'grad_norm': '222.8', 'learning_rate': '0.0001977', 'epoch': '0.4795'}
+{'loss': '23.62', 'grad_norm': '131.3', 'learning_rate': '0.0001967', 'epoch': '0.5479'}
+{'loss': '22.93', 'grad_norm': '145.5', 'learning_rate': '0.0001955', 'epoch': '0.6164'}
+{'loss': '18.7', 'grad_norm': '119.3', 'learning_rate': '0.0001941', 'epoch': '0.6849'}
+{'loss': '17.11', 'grad_norm': '156.2', 'learning_rate': '0.0001925', 'epoch': '0.7534'}
+{'loss': '15.58', 'grad_norm': '140.8', 'learning_rate': '0.0001907', 'epoch': '0.8219'}
+{'loss': '13.73', 'grad_norm': '142.1', 'learning_rate': '0.0001888', 'epoch': '0.8904'}
+{'loss': '11.89', 'grad_norm': '112.9', 'learning_rate': '0.0001866', 'epoch': '0.9589'}
+{'eval_loss': '1.916', 'eval_balanced_accuracy': '0.4066', 'eval_macro_f1': '0.3397', 'eval_runtime': '174', 'eval_samples_per_second': '1.959', 'eval_steps_per_second': '0.494', 'epoch': '1'}
+{'loss': '9.637', 'grad_norm': '85.64', 'learning_rate': '0.0001843', 'epoch': '1.027'}
+{'loss': '7.388', 'grad_norm': '88.04', 'learning_rate': '0.0001819', 'epoch': '1.096'}
+{'loss': '5.631', 'grad_norm': '82.51', 'learning_rate': '0.0001793', 'epoch': '1.164'}
+{'loss': '5.403', 'grad_norm': '138.6', 'learning_rate': '0.0001765', 'epoch': '1.233'}
+{'loss': '7.081', 'grad_norm': '85.52', 'learning_rate': '0.0001735', 'epoch': '1.301'}
+{'loss': '5.172', 'grad_norm': '104.3', 'learning_rate': '0.0001705', 'epoch': '1.37'}
+{'loss': '5.486', 'grad_norm': '97.71', 'learning_rate': '0.0001673', 'epoch': '1.438'}
+{'loss': '3.603', 'grad_norm': '93.99', 'learning_rate': '0.0001639', 'epoch': '1.507'}
+{'loss': '5.836', 'grad_norm': '109.7', 'learning_rate': '0.0001605', 'epoch': '1.575'}
+{'loss': '4.411', 'grad_norm': '74.9', 'learning_rate': '0.0001569', 'epoch': '1.644'}
+{'loss': '5.994', 'grad_norm': '100.3', 'learning_rate': '0.0001532', 'epoch': '1.712'}
+{'loss': '4.041', 'grad_norm': '13.57', 'learning_rate': '0.0001494', 'epoch': '1.781'}
+{'loss': '5.702', 'grad_norm': '73.23', 'learning_rate': '0.0001455', 'epoch': '1.849'}
+{'loss': '4.431', 'grad_norm': '93.24', 'learning_rate': '0.0001415', 'epoch': '1.918'}
+{'loss': '4.834', 'grad_norm': '80.58', 'learning_rate': '0.0001374', 'epoch': '1.986'}
+{'eval_loss': '1.581', 'eval_balanced_accuracy': '0.392', 'eval_macro_f1': '0.4142', 'eval_runtime': '174', 'eval_samples_per_second': '1.959', 'eval_steps_per_second': '0.494', 'epoch': '2'}
+{'loss': '1.821', 'grad_norm': '15.62', 'learning_rate': '0.0001333', 'epoch': '2.055'}
+{'loss': '0.7497', 'grad_norm': '7.354', 'learning_rate': '0.000129', 'epoch': '2.123'}
+{'loss': '2.451', 'grad_norm': '62.4', 'learning_rate': '0.0001248', 'epoch': '2.192'}
+{'loss': '1.444', 'grad_norm': '0.1912', 'learning_rate': '0.0001205', 'epoch': '2.26'}
+{'loss': '1.065', 'grad_norm': '0.02946', 'learning_rate': '0.0001161', 'epoch': '2.329'}
+{'loss': '0.887', 'grad_norm': '38.48', 'learning_rate': '0.0001117', 'epoch': '2.397'}
+{'loss': '0.4692', 'grad_norm': '164.3', 'learning_rate': '0.0001073', 'epoch': '2.466'}
+{'loss': '2.959', 'grad_norm': '239.6', 'learning_rate': '0.0001029', 'epoch': '2.534'}
+{'loss': '1.329', 'grad_norm': '118.6', 'learning_rate': '9.845e-05', 'epoch': '2.603'}
+{'loss': '2.175', 'grad_norm': '82.04', 'learning_rate': '9.402e-05', 'epoch': '2.671'}
+{'loss': '1.728', 'grad_norm': '115.2', 'learning_rate': '8.961e-05', 'epoch': '2.74'}
+{'loss': '0.948', 'grad_norm': '35.89', 'learning_rate': '8.521e-05', 'epoch': '2.808'}
+{'loss': '1.282', 'grad_norm': '0.3573', 'learning_rate': '8.084e-05', 'epoch': '2.877'}
+{'loss': '1.274', 'grad_norm': '112.3', 'learning_rate': '7.652e-05', 'epoch': '2.945'}
+{'eval_loss': '2.323', 'eval_balanced_accuracy': '0.536', 'eval_macro_f1': '0.5025', 'eval_runtime': '173.9', 'eval_samples_per_second': '1.96', 'eval_steps_per_second': '0.494', 'epoch': '3'}
+{'loss': '1.059', 'grad_norm': '4.204', 'learning_rate': '7.223e-05', 'epoch': '3.014'}
+{'loss': '1.268', 'grad_norm': '0.8438', 'learning_rate': '6.8e-05', 'epoch': '3.082'}
+{'loss': '0.3457', 'grad_norm': '0.3979', 'learning_rate': '6.384e-05', 'epoch': '3.151'}
+{'loss': '0.3534', 'grad_norm': '45.52', 'learning_rate': '5.975e-05', 'epoch': '3.219'}
+{'loss': '0.611', 'grad_norm': '151.6', 'learning_rate': '5.573e-05', 'epoch': '3.288'}
+{'loss': '0.03391', 'grad_norm': '0.0563', 'learning_rate': '5.18e-05', 'epoch': '3.356'}
+{'loss': '0.2559', 'grad_norm': '0.06207', 'learning_rate': '4.797e-05', 'epoch': '3.425'}
+{'loss': '0.7383', 'grad_norm': '0.06079', 'learning_rate': '4.424e-05', 'epoch': '3.493'}
+{'loss': '0.05533', 'grad_norm': '0.08278', 'learning_rate': '4.061e-05', 'epoch': '3.562'}
+{'loss': '0.572', 'grad_norm': '0.5074', 'learning_rate': '3.711e-05', 'epoch': '3.63'}
+{'loss': '0.02286', 'grad_norm': '0.01236', 'learning_rate': '3.373e-05', 'epoch': '3.699'}
+{'loss': '0.1909', 'grad_norm': '15.14', 'learning_rate': '3.047e-05', 'epoch': '3.767'}
+{'loss': '0.4862', 'grad_norm': '4.949', 'learning_rate': '2.736e-05', 'epoch': '3.836'}
+{'loss': '0.3791', 'grad_norm': '0.5868', 'learning_rate': '2.439e-05', 'epoch': '3.904'}
+{'loss': '0.3636', 'grad_norm': '0.09777', 'learning_rate': '2.156e-05', 'epoch': '3.973'}
+{'eval_loss': '2.617', 'eval_balanced_accuracy': '0.5615', 'eval_macro_f1': '0.5228', 'eval_runtime': '174', 'eval_samples_per_second': '1.96', 'eval_steps_per_second': '0.494', 'epoch': '4'}
+{'loss': '0.1716', 'grad_norm': '0.006333', 'learning_rate': '1.889e-05', 'epoch': '4.041'}
+{'loss': '0.1893', 'grad_norm': '0.05432', 'learning_rate': '1.638e-05', 'epoch': '4.11'}
+{'loss': '0.00109', 'grad_norm': '0.2628', 'learning_rate': '1.403e-05', 'epoch': '4.178'}
+{'loss': '0.1889', 'grad_norm': '0.541', 'learning_rate': '1.185e-05', 'epoch': '4.247'}
+{'loss': '0.0007944', 'grad_norm': '0.008086', 'learning_rate': '9.848e-06', 'epoch': '4.315'}
+{'loss': '0.303', 'grad_norm': '0.02877', 'learning_rate': '8.02e-06', 'epoch': '4.384'}
+{'loss': '0.008846', 'grad_norm': '6.045', 'learning_rate': '6.372e-06', 'epoch': '4.452'}
+{'loss': '8.375e-05', 'grad_norm': '0.007978', 'learning_rate': '4.908e-06', 'epoch': '4.521'}
+{'loss': '0.002319', 'grad_norm': '0.01268', 'learning_rate': '3.631e-06', 'epoch': '4.589'}
+{'loss': '0.002875', 'grad_norm': '0.0005441', 'learning_rate': '2.543e-06', 'epoch': '4.658'}
+{'loss': '0.0007404', 'grad_norm': '0.02202', 'learning_rate': '1.646e-06', 'epoch': '4.726'}
+{'loss': '0.00215', 'grad_norm': '0.0206', 'learning_rate': '9.419e-07', 'epoch': '4.795'}
+{'loss': '0.0002518', 'grad_norm': '0.0006169', 'learning_rate': '4.326e-07', 'epoch': '4.863'}
+{'loss': '0.01252', 'grad_norm': '3.207', 'learning_rate': '1.188e-07', 'epoch': '4.932'}
+{'loss': '0.1438', 'grad_norm': '0.03079', 'learning_rate': '9.817e-10', 'epoch': '5'}
+{'eval_loss': '2.603', 'eval_balanced_accuracy': '0.5544', 'eval_macro_f1': '0.5193', 'eval_runtime': '173.8', 'eval_samples_per_second': '1.962', 'eval_steps_per_second': '0.495', 'epoch': '5'}
+{'train_runtime': '1.692e+04', 'train_samples_per_second': '0.69', 'train_steps_per_second': '0.043', 'train_loss': '6.224', 'epoch': '5'}
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+============================================================
+FINETUNE EVAL: qlora_qwen3_32b
+============================================================
+  Balanced Accuracy: 0.5615
+  Macro F1:          0.5228
+  F1 Group A:        0.7255
+  F1 Group B:        0.5246
+  F1 Group C:        0.6250
+
+                                                                              precision    recall  f1-score   support
+
+                                                       Блок бизнес-директора       0.33      1.00      0.50         1
+                                                      Блок деректора по газу       1.00      0.43      0.60        14
+                                          Блок директора по газовым проектам       1.00      0.33      0.50         6
+                                                 Блок директора по мощностям       0.80      0.90      0.84        48
+                                                 Блок директора по персоналу       1.00      0.33      0.50         3
+                                                  Блок директора по портфелю       0.00      0.00      0.00         4
+                                            Блок директора по проектированию       0.50      0.75      0.60         8
+                                             Блок директора по строительству       0.78      0.56      0.65        32
+                     Блок заместителя генерального директора по безопасности       0.83      0.79      0.81        24
+                         Блок заместителя генерального директора по закупкам       0.56      0.77      0.65        13
+                           Блок заместителя генерального директора по защите       0.60      0.60      0.60         5
+                        Блок заместителя генерального директора по имуществу       0.50      0.33      0.40         3
+         Блок заместителя генерального директора по организационным вопросам       0.83      0.91      0.87        11
+                    Блок заместителя генерального директора по строительству       0.00      0.00      0.00         1
+Блок исполнительного директора по реализации проекта "Большое месторождение"       0.00      0.00      0.00         1
+                                                Блок операционного директора       0.20      0.17      0.18         6
+                                                 Блок технического директора       0.65      0.84      0.73        49
+                                                  Блок финансового директора       1.00      0.75      0.86         4
+                                                        Генеральный директор       0.50      0.40      0.44        20
+                                                       Имущественные вопросы       0.50      1.00      0.67         1
+                                 Подразделение по информационным технологиям       1.00      1.00      1.00         1
+                                                          Проект "Восточный"       0.25      0.33      0.29         3
+                                                   Проект "Нефтяные краюшки"       0.67      0.53      0.59        15
+                                                        Проект "Новая нефть"       0.38      0.43      0.40         7
+                      Проект "Обустройство площадных объектов НГКМ Поменбше"       0.00      0.00      0.00         1
+                                                   Проект "Северная деревня"       0.43      0.43      0.43         7
+                             Проект "Трубопроводный транспорт Главного НГКМ"       0.50      0.75      0.60         4
+                                                              Проект "Южный"       0.00      0.00      0.00         2
+                     Проект «Обустройство Интересного лицензионного участка»       0.50      1.00      0.67         1
+                               Проект «Обустройство объектов Новейшей нейти»       1.00      1.00      1.00         1
+                                  Проект «Обустройство объектов Новой нефти»       0.00      0.00      0.00         3
+                           Проект «Трубопроводный транспорт Ещё одного НГКМ»       1.00      1.00      1.00         1
+                                                      Проект сервиса скважин       1.00      0.78      0.88         9
+                                         Управление землеустроительных работ       0.50      0.25      0.33         4
+                                                     Управление коммуникаций       0.25      1.00      0.40         1
+                                             Управление по проектным работам       0.82      0.85      0.84        27
+
+                                                                    accuracy                           0.67       341
+                                                                   macro avg       0.55      0.56      0.52       341
+                                                                weighted avg       0.69      0.67      0.66       341
+
+[Orchestrator] Обновлено: results/all_methods_comparison.csv
+
+============================================================
+ИТОГО
+============================================================
+           run_key   method          model  balanced_accuracy  macro_f1  f1_group_A  f1_group_B  f1_group_C  trainable_params  train_time_sec           timestamp
+    lora_qwen3_14b     lora Qwen/Qwen3-14B           0.430481  0.440349    0.723021    0.483624    0.291667          64409600     6618.402010 2026-04-21T20:22:36
+tinylora_qwen3_14b tinylora Qwen/Qwen3-14B           0.237758  0.234120    0.519522    0.296094    0.083333            185600     7576.913018 2026-04-21T21:50:46
+   qlora_qwen3_32b    qlora Qwen/Qwen3-32B           0.561493  0.522816    0.725497    0.524626    0.625000         134402048    16922.243359 2026-04-21T23:16:30
+
+           run_key   method          model  balanced_accuracy  macro_f1  f1_group_A  f1_group_B  f1_group_C  trainable_params  train_time_sec           timestamp
+    lora_qwen3_14b     lora Qwen/Qwen3-14B           0.430481  0.440349    0.723021    0.483624    0.291667          64409600     6618.402010 2026-04-21T20:22:36
+tinylora_qwen3_14b tinylora Qwen/Qwen3-14B           0.237758  0.234120    0.519522    0.296094    0.083333            185600     7576.913018 2026-04-21T21:50:46
+   qlora_qwen3_32b    qlora Qwen/Qwen3-32B           0.561493  0.522816    0.725497    0.524626    0.625000         134402048    16922.243359 2026-04-21T23:16:30

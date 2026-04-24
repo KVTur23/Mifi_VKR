@@ -1,0 +1,7 @@
+{
+  "method": "lora",
+  "model_name": "Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24",
+  "run_key": "lora_vikhr_nemo_12b_instruct_r_21_09_24",
+  "trainable_params": 57200640,
+  "train_time_sec": 5000.357538938522
+}

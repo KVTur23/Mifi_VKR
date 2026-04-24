@@ -1,0 +1,7 @@
+{
+  "method": "qlora",
+  "model_name": "t-tech/T-pro-it-2.1",
+  "run_key": "qlora_t_pro_it_2_1",
+  "trainable_params": 134402048,
+  "train_time_sec": 16648.540524959564
+}
