@@ -22,7 +22,8 @@ CODE_DST=/tmp/kvt/exp3/code
 MODELS_DST=/tmp/kvt/models
 EXP_CFG=config_models/aug_configs/model_aug_exp3.json
 
-export HOME=$POOL
+export HOME=/tmp/kvt/exp3/home
+export TRITON_CACHE_DIR=/tmp/kvt/exp3/triton
 export XDG_CACHE_HOME=/tmp/kvt/exp3/cache
 export HF_HOME=/tmp/kvt/exp3/hf
 export HF_HUB_CACHE=$MODELS_DST
@@ -30,6 +31,8 @@ export HUGGINGFACE_HUB_CACHE=$MODELS_DST
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 export PYTHONUNBUFFERED=1
+
+mkdir -p "$HOME" "$TRITON_CACHE_DIR" "$XDG_CACHE_HOME" "$HF_HOME"
 
 echo "=== SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
 nvidia-smi | head -20
