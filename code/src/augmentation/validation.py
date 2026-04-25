@@ -176,6 +176,24 @@ def filter_short_texts(
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME], [WORK TYPE]
 _LANG_PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]+)*\]")
+_CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+
+def _looks_russian_by_script(text: str) -> bool:
+    """
+    Быстрый fallback для langdetect.
+
+    В служебных письмах много NER-плейсхолдеров, реквизитов, номеров, URL и
+    латинских аббревиатур. langdetect иногда ошибается на таких смешанных
+    текстах, хотя живой текст явно русский. Если кириллицы достаточно и она
+    доминирует над латиницей — считаем текст русским.
+    """
+    cyrillic = len(_CYRILLIC_RE.findall(text))
+    latin = len(_LATIN_RE.findall(text))
+    if cyrillic < 40:
+        return False
+    return cyrillic / max(cyrillic + latin, 1) >= 0.55
 
 
 def filter_non_russian(
@@ -204,6 +222,9 @@ def filter_non_russian(
         text_for_lang = _LANG_PLACEHOLDER_RE.sub(" ", text).strip()
         if not text_for_lang:
             # после очистки пусто — это шум из одних плейсхолдеров, отсекаем
+            continue
+        if _looks_russian_by_script(text_for_lang):
+            filtered.append(text)
             continue
         try:
             lang = detect(text_for_lang)
