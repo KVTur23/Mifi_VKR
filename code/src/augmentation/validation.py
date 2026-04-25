@@ -174,6 +174,10 @@ def filter_short_texts(
     return filtered
 
 
+# regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME], [WORK TYPE]
+_LANG_PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]+)*\]")
+
+
 def filter_non_russian(
     texts: list[str],
     class_name: str,
@@ -181,22 +185,30 @@ def filter_non_russian(
     """
     Проверяет, что текст написан на русском языке.
 
-    Используем langdetect.
+    Используем langdetect, но сначала вырезаем NER-плейсхолдеры на латинице
+    ([PERSON], [ORGANIZATION], ...). В наших данных их 30-60% символов —
+    без вырезания langdetect путает русский текст с английским и отсевает
+    почти всё (характерно для stage3 после обратного перевода).
 
     Аргументы:
         texts:      список текстов для проверки
         class_name: название класса (для логов)
 
     Возвращает:
-        Список текстов, определённых как русскоязычные
+        Список текстов, определённых как русскоязычные (оригинал, не очищенный)
     """
     filtered = []
 
     for text in texts:
+        # вырезаем плейсхолдеры — для определения языка нужен только живой текст
+        text_for_lang = _LANG_PLACEHOLDER_RE.sub(" ", text).strip()
+        if not text_for_lang:
+            # после очистки пусто — это шум из одних плейсхолдеров, отсекаем
+            continue
         try:
-            lang = detect(text)
+            lang = detect(text_for_lang)
             if lang == "ru":
-                filtered.append(text)
+                filtered.append(text)  # сохраняем оригинал с плейсхолдерами
         except LangDetectException:
             # Если langdetect не смог определить язык (слишком короткий текст,
             # спецсимволы и т.д.) — пропускаем, пусть лучше потеряем один текст,
