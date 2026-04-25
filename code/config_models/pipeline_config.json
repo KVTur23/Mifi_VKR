@@ -44,13 +44,13 @@
   "pipeline": {
     "stage1": {
       "target_count": 15,
-      "max_retries": 5,
+      "max_retries": 10,
       "oversample_factor": 5,
       "max_examples_in_prompt": 5
     },
     "stage2": {
       "target_count": 35,
-      "max_retries": 5,
+      "max_retries": 10,
       "oversample_factor": 5
     },
     "stage3": {
