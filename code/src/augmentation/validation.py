@@ -196,6 +196,14 @@ def _looks_russian_by_script(text: str) -> bool:
     return cyrillic / max(cyrillic + latin, 1) >= 0.55
 
 
+def _language_debug_info(text: str, detected_lang: str) -> str:
+    """Короткая строка для диагностики языкового фильтра."""
+    cyrillic = len(_CYRILLIC_RE.findall(text))
+    latin = len(_LATIN_RE.findall(text))
+    snippet = " ".join(text.split())[:180]
+    return f"lang={detected_lang}, cyr={cyrillic}, lat={latin}, text='{snippet}'"
+
+
 def filter_non_russian(
     texts: list[str],
     class_name: str,
@@ -216,12 +224,15 @@ def filter_non_russian(
         Список текстов, определённых как русскоязычные (оригинал, не очищенный)
     """
     filtered = []
+    rejected_examples = []
 
     for text in texts:
         # вырезаем плейсхолдеры — для определения языка нужен только живой текст
         text_for_lang = _LANG_PLACEHOLDER_RE.sub(" ", text).strip()
         if not text_for_lang:
             # после очистки пусто — это шум из одних плейсхолдеров, отсекаем
+            if len(rejected_examples) < 2:
+                rejected_examples.append(_language_debug_info(text_for_lang, "empty"))
             continue
         if _looks_russian_by_script(text_for_lang):
             filtered.append(text)
@@ -230,16 +241,22 @@ def filter_non_russian(
             lang = detect(text_for_lang)
             if lang == "ru":
                 filtered.append(text)  # сохраняем оригинал с плейсхолдерами
+            elif len(rejected_examples) < 2:
+                rejected_examples.append(_language_debug_info(text_for_lang, lang))
         except LangDetectException:
             # Если langdetect не смог определить язык (слишком короткий текст,
             # спецсимволы и т.д.) — пропускаем, пусть лучше потеряем один текст,
             # чем пропустим мусор
+            if len(rejected_examples) < 2:
+                rejected_examples.append(_language_debug_info(text_for_lang, "unknown"))
             pass
 
     removed = len(texts) - len(filtered)
     if removed > 0:
         print(f"  [Язык] Класс «{class_name}»: отсеяно {removed} текстов "
               f"(не русский язык)")
+        for i, example in enumerate(rejected_examples, start=1):
+            print(f"    [Язык/debug {i}] {example}")
 
     return filtered
 
