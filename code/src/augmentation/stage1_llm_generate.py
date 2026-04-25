@@ -37,7 +37,7 @@ from src.augmentation.validation import validate_generated_texts
 
 STAGE = 1
 TARGET_COUNT = 15
-MAX_RETRIES = 5
+MAX_RETRIES = 10
 MAX_EXAMPLES_IN_PROMPT = 5
 OVERSAMPLE_FACTOR = 5
 
