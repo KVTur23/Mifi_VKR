@@ -40,7 +40,7 @@ from src.utils.config_loader import load_model_config
 
 STAGE = 2
 TARGET_COUNT = 35
-MAX_RETRIES = 5
+MAX_RETRIES = 10
 OVERSAMPLE_FACTOR = 5
 PARAPHRASE_PROMPT = "paraphrase.txt"
 
