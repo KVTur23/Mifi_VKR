@@ -52,6 +52,7 @@ MIN_JUDGE_SCORE_STAGE3 = 2.5
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 MAX_LENGTH = 512
+TRANSLATION_NUM_BEAMS = 4
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
@@ -376,9 +377,9 @@ def translate_batch(
                 **inputs,
                 forced_bos_token_id=target_lang_id,
                 max_length=MAX_LENGTH,
-                do_sample=True,
-                temperature=1.2,
-                top_p=0.9,
+                do_sample=False,
+                num_beams=TRANSLATION_NUM_BEAMS,
+                early_stopping=True,
             )
 
         translated = tokenizer.batch_decode(outputs, skip_special_tokens=True)
