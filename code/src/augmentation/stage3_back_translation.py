@@ -299,10 +299,12 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         }
 
     # ==========================================================
-    # Проверяем кэш пар фазы 1 — если есть, пропускаем перевод
+    # Проверяем кэш пар фазы 1. Если он полный — можно сразу идти к судье.
+    # Если неполный — используем его как стартовое состояние и продолжаем перевод.
     # (только если stage3.csv нет — иначе кэш не актуален)
     # ==========================================================
 
+    run_phase1 = True
     if not has_stage3 and _PAIRS_CSV.exists():
         print(f"\n[Этап 3] Найден кэш пар фазы 1: {_PAIRS_CSV.name}, загружаю...")
         pairs_df = pd.read_csv(_PAIRS_CSV)
@@ -314,8 +316,18 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 )
         for cn, st in class_state.items():
             print(f"  «{cn}»: {len(st['accepted_pairs'])} пар в кэше")
-        print("[Этап 3] Фаза 1 пропущена — пары загружены из кэша")
-    else:
+        pending_after_cache = {
+            cn: st for cn, st in class_state.items()
+            if len(st["accepted_pairs"]) < st["n_needed"] * 2
+        }
+        if pending_after_cache:
+            print(f"[Этап 3] Кэш неполный: {len(pending_after_cache)} классов "
+                  f"ещё набирают кандидатов — продолжаю фазу 1")
+        else:
+            print("[Этап 3] Фаза 1 пропущена — кэш пар полный")
+            run_phase1 = False
+
+    if run_phase1:
         # ==========================================================
         # Фаза 1: NLLB перевод + валидация фильтрами
         # Копим ВСЕ пары (перевод, оригинал) что прошли фильтры —
