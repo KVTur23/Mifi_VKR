@@ -47,11 +47,12 @@ MODEL_NLLB = "facebook/nllb-200-3.3B"
 BATCH_SIZE = 64
 OVERSAMPLE_FACTOR = 3
 MIN_JUDGE_SCORE_STAGE3 = 2.5
+MAX_NLLB_BATCH_SIZE = 16
 
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 MAX_LENGTH = 512
-TRANSLATION_NUM_BEAMS = 4
+TRANSLATION_NUM_BEAMS = 2
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
@@ -116,15 +117,14 @@ def unload_from_gpu(*objects):
     print("[GPU] Память очищена")
 
 
-def load_sbert_on_gpu():
-    """Грузит SBERT на GPU для быстрой валидации."""
+def load_sbert_for_stage3():
+    """Грузит SBERT на CPU, чтобы не конкурировать с NLLB за VRAM."""
     from src.augmentation.validation import SBERT_MODEL_NAME
     from sentence_transformers import SentenceTransformer
     import src.augmentation.validation as val_module
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
 
-    # если уже на CPU — выгружаем
     if val_module._sbert_model is not None:
         del val_module._sbert_model
         val_module._sbert_model = None
@@ -147,6 +147,8 @@ def translate_batch(
     device: str,
 ) -> list[str]:
     """Переводит батч текстов через NLLB-200."""
+    if not texts:
+        return []
     try:
         tokenizer.src_lang = src_lang
         inputs = tokenizer(
@@ -170,6 +172,18 @@ def translate_batch(
 
         translated = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         return translated
+    except torch.cuda.OutOfMemoryError as e:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if len(texts) == 1:
+            print(f"  [Перевод/OOM] Не хватило памяти даже на 1 текст: {e}")
+            return [""]
+        mid = len(texts) // 2
+        print(f"  [Перевод/OOM] Батч {len(texts)} не поместился, делю на "
+              f"{mid}+{len(texts) - mid}")
+        left = translate_batch(texts[:mid], model, tokenizer, src_lang, tgt_lang, device)
+        right = translate_batch(texts[mid:], model, tokenizer, src_lang, tgt_lang, device)
+        return left + right
     except Exception as e:
         print(f"  [Перевод] Ошибка при переводе батча: {e}")
         return [""] * len(texts)
@@ -197,14 +211,15 @@ def back_translate(
 
     # RU → EN
     en_texts = []
-    for i in tqdm(range(0, len(masked_texts), BATCH_SIZE), desc="    RU→EN", leave=False):
-        batch = masked_texts[i:i + BATCH_SIZE]
+    batch_size = min(BATCH_SIZE, MAX_NLLB_BATCH_SIZE)
+    for i in tqdm(range(0, len(masked_texts), batch_size), desc="    RU→EN", leave=False):
+        batch = masked_texts[i:i + batch_size]
         en_texts.extend(translate_batch(batch, model, tokenizer, LANG_RU, LANG_EN, device))
 
     # EN → RU
     ru_texts = []
-    for i in tqdm(range(0, len(en_texts), BATCH_SIZE), desc="    EN→RU", leave=False):
-        batch = en_texts[i:i + BATCH_SIZE]
+    for i in tqdm(range(0, len(en_texts), batch_size), desc="    EN→RU", leave=False):
+        batch = en_texts[i:i + batch_size]
         ru_texts.extend(translate_batch(batch, model, tokenizer, LANG_EN, LANG_RU, device))
 
     # восстанавливаем плейсхолдеры
@@ -250,7 +265,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         OVERSAMPLE_FACTOR = s.oversample_factor
         MIN_JUDGE_SCORE_STAGE3 = s.min_judge_score
         MODEL_NLLB = pipeline_cfg.gpu.nllb_model
-        BATCH_SIZE = pipeline_cfg.gpu.nllb_batch_size
+        BATCH_SIZE = min(pipeline_cfg.gpu.nllb_batch_size, MAX_NLLB_BATCH_SIZE)
 
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
@@ -336,7 +351,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         # ==========================================================
 
         model, tokenizer, device = load_translation_models()
-        sbert_model = load_sbert_on_gpu()
+        sbert_model = load_sbert_for_stage3()
 
         for attempt in range(1, MAX_RETRIES + 1):
             # перевод останавливается когда класс набрал 2x от нужного,
