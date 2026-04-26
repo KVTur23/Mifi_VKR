@@ -11,7 +11,7 @@
 #SBATCH --output=/mnt/pool/6/kvturanosov/VKR/code/logs/aug_exp1_%j.log
 #SBATCH --error=/mnt/pool/6/kvturanosov/VKR/code/logs/aug_exp1_%j.err
 
-# exp-aug-1: Qwen3-32B-AWQ на всех этапах (stage1/stage2/stage3-судья) + NLLB-3.3B на переводе
+# exp-aug-1: Qwen3-32B-AWQ на всех этапах (stage1/stage2/stage3-судья) + NLLB distilled-1.3B на переводе
 # Pre-синхронизация кода и моделей делается отдельным джобом aug_pre.sbatch (см. эту же папку).
 
 set -e

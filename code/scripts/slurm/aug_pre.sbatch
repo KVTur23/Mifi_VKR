@@ -28,7 +28,7 @@ NEEDED_MODELS=(
   "models--google--translategemma-12b-it"
   "models--mradermacher--YanoljaNEXT-Rosetta-20B-GGUF"
   "models--fyaronskiy--ruT5-large-paraphraser"
-  "models--facebook--nllb-200-3.3B"
+  "models--facebook--nllb-200-distilled-1.3B"
   "models--ai-forever--sbert_large_nlu_ru"
 )
 
