@@ -11,7 +11,7 @@
 #SBATCH --output=/mnt/pool/6/kvturanosov/VKR/code/logs/aug_exp2_%j.log
 #SBATCH --error=/mnt/pool/6/kvturanosov/VKR/code/logs/aug_exp2_%j.err
 
-# exp-aug-2: RuadaptQwen3-32B-Instruct-AWQ на всех этапах LLM + NLLB-3.3B на переводе
+# exp-aug-2: RuadaptQwen3-32B-Instruct-AWQ на всех этапах LLM + NLLB distilled-1.3B на переводе
 # Pre-синхронизация — отдельным джобом aug_pre.sbatch (ветка exp-aug-1).
 
 set -e

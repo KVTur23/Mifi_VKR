@@ -66,7 +66,8 @@ def load_pipeline_config(gpu: str = "L4") -> _DotDict:
 
     print(f"[Config] GPU: {gpu_upper} ({cfg.gpu.vram_gb}GB), "
           f"NLLB: {cfg.gpu.nllb_model}, "
-          f"batch: {cfg.gpu.nllb_batch_size}")
+          f"batch: {cfg.gpu.nllb_batch_size}, "
+          f"chunk: {cfg.stage3.get('nllb_chunk_chars', 'default')}")
 
     _config_cache[cache_key] = cfg
     return cfg
