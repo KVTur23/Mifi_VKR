@@ -25,6 +25,7 @@ NEEDED_MODELS=(
   "models--Qwen--Qwen3-32B-AWQ"
   "models--Qwen--Qwen2.5-14B-Instruct-AWQ"
   "models--qdzzzxc--RuadaptQwen3-32B-Instruct-AWQ"
+  "models--google--translategemma-12b-it"
   "models--mradermacher--YanoljaNEXT-Rosetta-20B-GGUF"
   "models--fyaronskiy--ruT5-large-paraphraser"
   "models--facebook--nllb-200-3.3B"
