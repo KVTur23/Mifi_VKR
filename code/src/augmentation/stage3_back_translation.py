@@ -234,14 +234,20 @@ def translate_batch_translategemma(
     Переводит батч через google/translategemma-*.
 
     У TranslateGemma собственный chat template: user.content должен быть списком
-    из одного text-item с source_lang_code/target_lang_code. Обычный prompt-string
-    падает на применении шаблона.
+    из одного text-item с source_lang_code/target_lang_code. Через llm.chat()
+    это не работает — vllm.chat() сам нормализует messages в OpenAI-формат и
+    режет наши кастомные поля до того как chat_template их увидит. Поэтому
+    применяем chat_template вручную через tokenizer.apply_chat_template и потом
+    отдаём llm.generate уже готовые промпт-строки.
     """
     if not texts:
         return []
 
-    conversations = [
-        [
+    tokenizer = llm.get_tokenizer()
+
+    prompts: list[str] = []
+    for text in texts:
+        messages = [
             {
                 "role": "user",
                 "content": [
@@ -254,19 +260,23 @@ def translate_batch_translategemma(
                 ],
             }
         ]
-        for text in texts
-    ]
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        prompts.append(prompt)
 
     try:
-        outputs = llm.chat(conversations, sampling_params)
+        outputs = llm.generate(prompts, sampling_params)
         return _extract_vllm_text(outputs)
     except Exception as e:
         print(f"[Перевод/TranslateGemma] Батч упал, пробую по одному: {e}")
 
     result: list[str | None] = []
-    for i, conv in enumerate(conversations, start=1):
+    for i, prompt in enumerate(prompts, start=1):
         try:
-            outputs = llm.chat([conv], sampling_params)
+            outputs = llm.generate([prompt], sampling_params)
             result.extend(_extract_vllm_text(outputs))
         except Exception as e:
             if i <= 3:
