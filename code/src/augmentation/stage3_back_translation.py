@@ -99,6 +99,9 @@ TRANSLATE_PROMPT_EN_RU = (
     "Выведи только перевод, без пояснений.\n\n{text}"
 )
 
+TRANSLATEGEMMA_RU = "ru"
+TRANSLATEGEMMA_EN = "en"
+
 
 def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
     """
@@ -156,12 +159,118 @@ def unload_vllm(llm) -> None:
     print("[GPU] vLLM-модель выгружена")
 
 
-def back_translate_llm(texts: list[str], llm, sampling_params) -> list[str]:
+def _is_translategemma(model_name: str) -> bool:
+    """TranslateGemma использует не обычный chat prompt, а structured content."""
+    return "translategemma" in model_name.lower()
+
+
+def _extract_vllm_text(outputs) -> list[str | None]:
+    result = []
+    for output in outputs:
+        text = output.outputs[0].text.strip() if output.outputs else None
+        result.append(text if text else None)
+    return result
+
+
+def translate_batch_translategemma(
+    texts: list[str],
+    llm,
+    sampling_params,
+    source_lang: str,
+    target_lang: str,
+) -> list[str | None]:
+    """
+    Переводит батч через google/translategemma-*.
+
+    У TranslateGemma собственный chat template: user.content должен быть списком
+    из одного text-item с source_lang_code/target_lang_code. Обычный prompt-string
+    падает на применении шаблона.
+    """
+    if not texts:
+        return []
+
+    conversations = [
+        [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "source_lang_code": source_lang,
+                        "target_lang_code": target_lang,
+                        "text": text,
+                    }
+                ],
+            }
+        ]
+        for text in texts
+    ]
+
+    try:
+        outputs = llm.chat(conversations, sampling_params)
+        return _extract_vllm_text(outputs)
+    except Exception as e:
+        print(f"[Перевод/TranslateGemma] Батч упал, пробую по одному: {e}")
+
+    result: list[str | None] = []
+    for i, conv in enumerate(conversations, start=1):
+        try:
+            outputs = llm.chat([conv], sampling_params)
+            result.extend(_extract_vllm_text(outputs))
+        except Exception as e:
+            if i <= 3:
+                print(f"[Перевод/TranslateGemma] Ошибка на тексте {i}: {e}")
+            result.append(None)
+    return result
+
+
+def back_translate_translategemma(texts: list[str], llm, sampling_params) -> list[str]:
+    """
+    Обратный перевод через TranslateGemma: RU → EN → RU.
+    """
+    masked_texts = []
+    all_placeholders = []
+    for text in texts:
+        masked, phs = mask_placeholders(text)
+        masked_texts.append(masked)
+        all_placeholders.append(phs)
+
+    en_texts = translate_batch_translategemma(
+        masked_texts,
+        llm,
+        sampling_params,
+        TRANSLATEGEMMA_RU,
+        TRANSLATEGEMMA_EN,
+    )
+    ru_texts = translate_batch_translategemma(
+        [text or "" for text in en_texts],
+        llm,
+        sampling_params,
+        TRANSLATEGEMMA_EN,
+        TRANSLATEGEMMA_RU,
+    )
+
+    result = []
+    for text, phs in zip(ru_texts, all_placeholders):
+        result.append(unmask_placeholders((text or "").strip(), phs))
+
+    return result
+
+
+def back_translate_llm(
+    texts: list[str],
+    llm,
+    sampling_params,
+    model_name: str = "",
+) -> list[str]:
     """
     Обратный перевод через инструкционную LLM (вместо NLLB).
     RU → EN → RU, плейсхолдеры маскируются в <N> и восстанавливаются.
     """
     from src.augmentation.llm_utils import generate_batch
+
+    if _is_translategemma(model_name):
+        return back_translate_translategemma(texts, llm, sampling_params)
 
     masked_texts = []
     all_placeholders = []
@@ -583,7 +692,10 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
         if use_llm_translator:
             llm_tr, sp_tr = load_llm_translator(translator_cfg, pipeline_cfg)
-            translate_fn = lambda srcs: back_translate_llm(srcs, llm_tr, sp_tr)
+            translator_model_name = translator_cfg.get("model_name", "")
+            translate_fn = lambda srcs: back_translate_llm(
+                srcs, llm_tr, sp_tr, translator_model_name
+            )
             model = tokenizer = device = None
         elif use_llamacpp_translator:
             llm_tr, gen_params_tr = load_llamacpp_translator(translator_cfg)
