@@ -53,9 +53,12 @@ LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 MAX_LENGTH = 512
 TRANSLATION_NUM_BEAMS = 2
+NLLB_CHUNK_CHARS = 600
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
+_SENT_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
+_PARA_SPLIT_RE = re.compile(r'\n\n+')
 
 # промежуточный csv для пар фазы 1 — при рестарте подхватываем и сразу в фазу 2
 _PAIRS_CSV = DATA_DIR / "_stage3_pairs_cache.csv"
@@ -84,6 +87,375 @@ def unmask_placeholders(text: str, placeholders: list[str]) -> str:
         text = text.replace(f"<{i}>", ph, 1)
     return text
 
+
+def split_into_chunks(text: str, max_chars: int = NLLB_CHUNK_CHARS) -> list[str]:
+    """
+    Бьёт письмо на короткие фрагменты для NLLB.
+
+    Длинные письма целиком часто приводят NLLB к обрезкам, зацикливаниям и
+    латинице вместо русского. Делаем так же, как в ruT5 stage2: сначала абзацы,
+    затем предложения, и только последнее средство — грубый разрез.
+    """
+    if not text or not text.strip():
+        return []
+
+    paragraphs = [p.strip() for p in _PARA_SPLIT_RE.split(text) if p.strip()]
+    if not paragraphs:
+        paragraphs = [text.strip()]
+
+    chunks: list[str] = []
+    for para in paragraphs:
+        if len(para) <= max_chars:
+            chunks.append(para)
+            continue
+
+        sentences = _SENT_SPLIT_RE.split(para)
+        buf = ""
+        for sent in sentences:
+            sent = sent.strip()
+            if not sent:
+                continue
+            if len(sent) > max_chars:
+                if buf:
+                    chunks.append(buf)
+                    buf = ""
+                for i in range(0, len(sent), max_chars):
+                    part = sent[i:i + max_chars].strip()
+                    if part:
+                        chunks.append(part)
+                continue
+            if len(buf) + len(sent) + 1 <= max_chars:
+                buf = (buf + " " + sent).strip() if buf else sent
+            else:
+                if buf:
+                    chunks.append(buf)
+                buf = sent
+        if buf:
+            chunks.append(buf)
+
+    return chunks
+
+
+# --- LLM-translator (для экспериментов где перевод делает не NLLB, а инструкционная LLM) ---
+
+TRANSLATE_PROMPT_RU_EN = (
+    "Translate the following Russian text to English. "
+    "Preserve all placeholders like <0>, <1>, <2> exactly as they appear. "
+    "Output only the translation, no explanations.\n\n{text}"
+)
+TRANSLATE_PROMPT_EN_RU = (
+    "Переведи следующий английский текст на русский язык. "
+    "Сохрани все плейсхолдеры вида <0>, <1>, <2> без изменений. "
+    "Выведи только перевод, без пояснений.\n\n{text}"
+)
+
+TRANSLATEGEMMA_RU = "ru"
+TRANSLATEGEMMA_EN = "en"
+
+
+def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
+    """
+    Грузит LLM-переводчик (Rosetta-20B и т.п.) через vLLM.
+    Отдельная функция — чтобы не смешивать с load_llm из llm_utils, у которой другой контракт.
+    """
+    from vllm import LLM, SamplingParams
+
+    model_name = translator_cfg["model_name"]
+    max_len = translator_cfg.get("max_seq_length", 4096)
+
+    gpu_mem = 0.90
+    eager = True
+    if pipeline_cfg is not None:
+        gpu_mem = pipeline_cfg.gpu.gpu_memory_utilization
+        eager = pipeline_cfg.gpu.enforce_eager
+
+    print(f"[Перевод/LLM] Загружаю переводчик через vLLM: {model_name}")
+
+    quantization = translator_cfg.get(
+        "quantization", "awq" if "awq" in model_name.lower() else None
+    )
+
+    llm = LLM(
+        model=model_name,
+        trust_remote_code=True,
+        max_model_len=max_len,
+        quantization=quantization,
+        gpu_memory_utilization=gpu_mem,
+        enforce_eager=eager,
+    )
+
+    sp = SamplingParams(
+        temperature=translator_cfg.get("temperature", 0.3),
+        top_p=translator_cfg.get("top_p", 0.9),
+        max_tokens=translator_cfg.get("max_new_tokens", 2048),
+    )
+
+    print(f"[Перевод/LLM] Переводчик загружен: {model_name}")
+    return llm, sp
+
+
+def unload_vllm(llm) -> None:
+    """Выгружает vLLM-модель с GPU — чистит всё, что держит CUDA-память."""
+    try:
+        from vllm.distributed.parallel_state import destroy_model_parallel
+        destroy_model_parallel()
+    except Exception:
+        pass
+    del llm
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+    print("[GPU] vLLM-модель выгружена")
+
+
+def _is_translategemma(model_name: str) -> bool:
+    """TranslateGemma использует не обычный chat prompt, а structured content."""
+    return "translategemma" in model_name.lower()
+
+
+def _extract_vllm_text(outputs) -> list[str | None]:
+    result = []
+    for output in outputs:
+        text = output.outputs[0].text.strip() if output.outputs else None
+        result.append(text if text else None)
+    return result
+
+
+def translate_batch_translategemma(
+    texts: list[str],
+    llm,
+    sampling_params,
+    source_lang: str,
+    target_lang: str,
+) -> list[str | None]:
+    """
+    Переводит батч через google/translategemma-*.
+
+    У TranslateGemma собственный chat template: user.content должен быть списком
+    из одного text-item с source_lang_code/target_lang_code. Обычный prompt-string
+    падает на применении шаблона.
+    """
+    if not texts:
+        return []
+
+    conversations = [
+        [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "source_lang_code": source_lang,
+                        "target_lang_code": target_lang,
+                        "text": text,
+                    }
+                ],
+            }
+        ]
+        for text in texts
+    ]
+
+    try:
+        outputs = llm.chat(conversations, sampling_params)
+        return _extract_vllm_text(outputs)
+    except Exception as e:
+        print(f"[Перевод/TranslateGemma] Батч упал, пробую по одному: {e}")
+
+    result: list[str | None] = []
+    for i, conv in enumerate(conversations, start=1):
+        try:
+            outputs = llm.chat([conv], sampling_params)
+            result.extend(_extract_vllm_text(outputs))
+        except Exception as e:
+            if i <= 3:
+                print(f"[Перевод/TranslateGemma] Ошибка на тексте {i}: {e}")
+            result.append(None)
+    return result
+
+
+def back_translate_translategemma(texts: list[str], llm, sampling_params) -> list[str]:
+    """
+    Обратный перевод через TranslateGemma: RU → EN → RU.
+    """
+    masked_texts = []
+    all_placeholders = []
+    for text in texts:
+        masked, phs = mask_placeholders(text)
+        masked_texts.append(masked)
+        all_placeholders.append(phs)
+
+    en_texts = translate_batch_translategemma(
+        masked_texts,
+        llm,
+        sampling_params,
+        TRANSLATEGEMMA_RU,
+        TRANSLATEGEMMA_EN,
+    )
+    ru_texts = translate_batch_translategemma(
+        [text or "" for text in en_texts],
+        llm,
+        sampling_params,
+        TRANSLATEGEMMA_EN,
+        TRANSLATEGEMMA_RU,
+    )
+
+    result = []
+    for text, phs in zip(ru_texts, all_placeholders):
+        result.append(unmask_placeholders((text or "").strip(), phs))
+
+    return result
+
+
+def back_translate_llm(
+    texts: list[str],
+    llm,
+    sampling_params,
+    model_name: str = "",
+) -> list[str]:
+    """
+    Обратный перевод через инструкционную LLM (вместо NLLB).
+    RU → EN → RU, плейсхолдеры маскируются в <N> и восстанавливаются.
+    """
+    from src.augmentation.llm_utils import generate_batch
+
+    if _is_translategemma(model_name):
+        return back_translate_translategemma(texts, llm, sampling_params)
+
+    masked_texts = []
+    all_placeholders = []
+    for text in texts:
+        masked, phs = mask_placeholders(text)
+        masked_texts.append(masked)
+        all_placeholders.append(phs)
+
+    # RU → EN
+    prompts_ru_en = [TRANSLATE_PROMPT_RU_EN.format(text=t) for t in masked_texts]
+    en_texts = generate_batch(llm, sampling_params, prompts_ru_en)
+
+    # EN → RU
+    prompts_en_ru = [TRANSLATE_PROMPT_EN_RU.format(text=t or "") for t in en_texts]
+    ru_texts = generate_batch(llm, sampling_params, prompts_en_ru)
+
+    result = []
+    for text, phs in zip(ru_texts, all_placeholders):
+        result.append(unmask_placeholders((text or "").strip(), phs))
+
+    return result
+
+
+# --- llama.cpp-translator (для GGUF-квантов типа YanoljaNEXT-Rosetta-20B-GGUF) ---
+
+def load_llamacpp_translator(translator_cfg: dict) -> tuple:
+    """
+    Грузит GGUF-модель через llama-cpp-python с CUDA-offload.
+
+    Ожидает в translator_cfg одно из двух:
+      - model_path: полный путь до .gguf файла (с возможным glob * в snapshot-хеше)
+      - ИЛИ model_repo (например "models--mradermacher--YanoljaNEXT-Rosetta-20B-GGUF")
+        + model_file ("YanoljaNEXT-Rosetta-20B.Q4_K_M.gguf")
+        — тогда файл ищется в $HF_HUB_CACHE/<repo>/snapshots/*/<file>.
+
+    Дополнительно:
+      - max_seq_length (опц.): контекст (n_ctx), дефолт 4096
+      - n_gpu_layers (опц.): сколько слоёв на GPU, -1 = все (дефолт -1)
+    """
+    import glob
+    import os
+    from llama_cpp import Llama
+
+    model_path = translator_cfg.get("model_path")
+    if not model_path:
+        # собираем из repo+file через HF_HUB_CACHE
+        repo = translator_cfg["model_repo"]
+        fname = translator_cfg["model_file"]
+        cache = os.environ.get("HF_HUB_CACHE") or os.environ.get("HUGGINGFACE_HUB_CACHE") or ""
+        model_path = os.path.join(cache, repo, "snapshots", "*", fname)
+
+    # резолвим glob — llama.cpp ждёт конкретный файл
+    if "*" in model_path:
+        matches = glob.glob(model_path)
+        if not matches:
+            raise FileNotFoundError(f"GGUF не найден по шаблону: {model_path}")
+        model_path = matches[0]
+        print(f"[Перевод/llama.cpp] Найден GGUF: {model_path}")
+
+    n_ctx = translator_cfg.get("max_seq_length", 4096)
+    n_gpu_layers = translator_cfg.get("n_gpu_layers", -1)
+
+    print(f"[Перевод/llama.cpp] Загружаю GGUF: {model_path}")
+    print(f"[Перевод/llama.cpp] n_ctx={n_ctx}, n_gpu_layers={n_gpu_layers}")
+
+    llm = Llama(
+        model_path=model_path,
+        n_ctx=n_ctx,
+        n_gpu_layers=n_gpu_layers,
+        verbose=False,
+    )
+
+    gen_params = {
+        "max_tokens": translator_cfg.get("max_new_tokens", 2048),
+        "temperature": translator_cfg.get("temperature", 0.3),
+        "top_p": translator_cfg.get("top_p", 0.9),
+    }
+    print(f"[Перевод/llama.cpp] GGUF-модель загружена")
+    return llm, gen_params
+
+
+def unload_llamacpp(llm) -> None:
+    """Выгружает GGUF-модель — освобождаем VRAM под судью vLLM."""
+    try:
+        if hasattr(llm, "close"):
+            llm.close()
+        elif hasattr(llm, "__del__"):
+            llm.__del__()
+    except Exception:
+        pass
+    del llm
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+    print("[GPU] llama.cpp-модель выгружена")
+
+
+def back_translate_llamacpp(texts: list[str], llm, gen_params: dict) -> list[str]:
+    """
+    RU→EN→RU через llama-cpp-python. Без батчинга — llama.cpp идёт последовательно.
+    Для ~20 классов по 50 переводов на класс это ~1000 промптов × 2 направления = 2000 вызовов,
+    заметно медленнее vLLM-пути, но единственный вариант для GGUF-моделей.
+    """
+    masked_texts = []
+    all_placeholders = []
+    for text in texts:
+        masked, phs = mask_placeholders(text)
+        masked_texts.append(masked)
+        all_placeholders.append(phs)
+
+    # RU → EN
+    en_texts = []
+    for t in tqdm(masked_texts, desc="    RU→EN (llama.cpp)", leave=False):
+        try:
+            out = llm(TRANSLATE_PROMPT_RU_EN.format(text=t), **gen_params)
+            en_texts.append(out["choices"][0]["text"].strip())
+        except Exception as e:
+            print(f"  [llama.cpp] Ошибка RU→EN: {e}")
+            en_texts.append("")
+
+    # EN → RU
+    ru_texts = []
+    for t in tqdm(en_texts, desc="    EN→RU (llama.cpp)", leave=False):
+        try:
+            out = llm(TRANSLATE_PROMPT_EN_RU.format(text=t or ""), **gen_params)
+            ru_texts.append(out["choices"][0]["text"].strip())
+        except Exception as e:
+            print(f"  [llama.cpp] Ошибка EN→RU: {e}")
+            ru_texts.append("")
+
+    result = []
+    for text, phs in zip(ru_texts, all_placeholders):
+        result.append(unmask_placeholders((text or "").strip(), phs))
+    return result
 
 def load_translation_models() -> tuple:
     """Грузит NLLB-200 на GPU (или CPU если нет)."""
@@ -165,18 +537,9 @@ def translate_batch(
                 **inputs,
                 forced_bos_token_id=target_lang_id,
                 max_length=MAX_LENGTH,
-                min_length=64,
-                # На main ветке здесь был sampling и NLLB не дегенерировала.
-                # Beam search детерминированно даёт похожие переводы для похожих
-                # писем → много точных дубликатов. Sampling с temperature=1.0
-                # + anti-degeneration (no_repeat_ngram_size + repetition_penalty)
-                # даёт разнообразие и подавляет зацикленные "< < < <" паттерны.
-                do_sample=True,
-                temperature=1.0,
-                top_p=0.9,
-                repetition_penalty=1.3,
-                no_repeat_ngram_size=3,
-                length_penalty=1.0,
+                num_beams=TRANSLATION_NUM_BEAMS,
+                do_sample=False,
+                early_stopping=True,
             )
 
         translated = tokenizer.batch_decode(outputs, skip_special_tokens=True)
@@ -210,19 +573,31 @@ def back_translate(
     Перед переводом маскируем [PERSON], [ORGANIZATION] и т.д. в короткие <0>, <1>, ...
     После перевода восстанавливаем обратно.
     """
-    # маскируем плейсхолдеры — NLLB их не ломает
-    masked_texts = []
+    # Маскируем плейсхолдеры и режем документы на короткие куски.
+    # NLLB значительно стабильнее на 400-600 символах, чем на письме целиком.
+    all_chunks: list[str] = []
+    doc_chunk_ranges: list[tuple[int, int]] = []
     all_placeholders = []
     for text in texts:
         masked, phs = mask_placeholders(text)
-        masked_texts.append(masked)
         all_placeholders.append(phs)
+        chunks = split_into_chunks(masked)
+        start = len(all_chunks)
+        all_chunks.extend(chunks)
+        end = len(all_chunks)
+        doc_chunk_ranges.append((start, end))
+
+    if not all_chunks:
+        return [""] * len(texts)
+
+    print(f"  Всего NLLB-чанков: {len(all_chunks)} "
+          f"(в среднем {len(all_chunks) / max(len(texts), 1):.1f} на документ)")
 
     # RU → EN
     en_texts = []
     batch_size = min(BATCH_SIZE, MAX_NLLB_BATCH_SIZE)
-    for i in tqdm(range(0, len(masked_texts), batch_size), desc="    RU→EN", leave=False):
-        batch = masked_texts[i:i + batch_size]
+    for i in tqdm(range(0, len(all_chunks), batch_size), desc="    RU→EN", leave=False):
+        batch = all_chunks[i:i + batch_size]
         en_texts.extend(translate_batch(batch, model, tokenizer, LANG_RU, LANG_EN, device))
 
     # EN → RU
@@ -231,10 +606,11 @@ def back_translate(
         batch = en_texts[i:i + batch_size]
         ru_texts.extend(translate_batch(batch, model, tokenizer, LANG_EN, LANG_RU, device))
 
-    # восстанавливаем плейсхолдеры
+    # Собираем чанки обратно в документы и восстанавливаем плейсхолдеры.
     result = []
-    for text, phs in zip(ru_texts, all_placeholders):
-        result.append(unmask_placeholders(text.strip(), phs))
+    for (start, end), phs in zip(doc_chunk_ranges, all_placeholders):
+        pieces = [p.strip() for p in ru_texts[start:end] if p and p.strip()]
+        result.append(unmask_placeholders("\n\n".join(pieces), phs))
 
     return result
 
