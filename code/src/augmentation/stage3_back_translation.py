@@ -154,12 +154,41 @@ TRANSLATEGEMMA_RU = "ru"
 TRANSLATEGEMMA_EN = "en"
 
 
+def get_translator_temperature_for_attempt(
+    translator_cfg: dict,
+    attempt: int,
+) -> float:
+    """Возвращает температуру LLM-переводчика для текущей попытки stage3."""
+    schedule = translator_cfg.get("temperature_schedule")
+    if schedule:
+        idx = min(max(attempt - 1, 0), len(schedule) - 1)
+        return float(schedule[idx])
+    return float(translator_cfg.get("temperature", 0.3))
+
+
+def make_translator_sampling_params(
+    translator_cfg: dict,
+    temperature: float | None = None,
+):
+    """Собирает vLLM SamplingParams для LLM-переводчика."""
+    from vllm import SamplingParams
+
+    return SamplingParams(
+        temperature=(
+            float(translator_cfg.get("temperature", 0.3))
+            if temperature is None else float(temperature)
+        ),
+        top_p=float(translator_cfg.get("top_p", 0.9)),
+        max_tokens=int(translator_cfg.get("max_new_tokens", 2048)),
+    )
+
+
 def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
     """
     Грузит LLM-переводчик (Rosetta-20B и т.п.) через vLLM.
     Отдельная функция — чтобы не смешивать с load_llm из llm_utils, у которой другой контракт.
     """
-    from vllm import LLM, SamplingParams
+    from vllm import LLM
 
     model_name = translator_cfg["model_name"]
     max_len = translator_cfg.get("max_seq_length", 4096)
@@ -169,6 +198,7 @@ def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
     if pipeline_cfg is not None:
         gpu_mem = pipeline_cfg.gpu.gpu_memory_utilization
         eager = pipeline_cfg.gpu.enforce_eager
+    gpu_mem = float(translator_cfg.get("gpu_memory_utilization", gpu_mem))
 
     print(f"[Перевод/LLM] Загружаю переводчик через vLLM: {model_name}")
 
@@ -185,13 +215,13 @@ def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
         enforce_eager=eager,
     )
 
-    sp = SamplingParams(
-        temperature=translator_cfg.get("temperature", 0.3),
-        top_p=translator_cfg.get("top_p", 0.9),
-        max_tokens=translator_cfg.get("max_new_tokens", 2048),
-    )
+    sp = make_translator_sampling_params(translator_cfg)
 
-    print(f"[Перевод/LLM] Переводчик загружен: {model_name}")
+    print(f"[Перевод/LLM] Переводчик загружен: {model_name} "
+          f"(gpu_memory_utilization={gpu_mem})")
+    print(f"[Перевод/LLM] Sampling: temperature={translator_cfg.get('temperature', 0.3)}, "
+          f"top_p={translator_cfg.get('top_p', 0.9)}, "
+          f"max_tokens={translator_cfg.get('max_new_tokens', 2048)}")
     return llm, sp
 
 
@@ -502,12 +532,12 @@ def unload_from_gpu(*objects):
 
 
 def load_sbert_for_stage3():
-    """Грузит SBERT на CPU, чтобы не конкурировать с NLLB за VRAM."""
+    """Грузит SBERT на GPU, если он доступен, иначе на CPU."""
     from src.augmentation.validation import SBERT_MODEL_NAME
     from sentence_transformers import SentenceTransformer
     import src.augmentation.validation as val_module
 
-    device = "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if val_module._sbert_model is not None:
         del val_module._sbert_model
@@ -785,6 +815,16 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
             print(f"\n[Этап 3] Попытка {attempt}/{MAX_RETRIES}: "
                   f"{len(pending)} классов ещё набирают кандидатов")
+            if use_llm_translator:
+                attempt_temp = get_translator_temperature_for_attempt(
+                    translator_cfg, attempt
+                )
+                sp_tr = make_translator_sampling_params(
+                    translator_cfg, temperature=attempt_temp
+                )
+                print(f"  [Перевод/LLM] Попытка {attempt}: "
+                      f"temperature={attempt_temp}, "
+                      f"top_p={translator_cfg.get('top_p', 0.9)}")
 
             # собираем все оригиналы в один список — переводим одним прогоном
             all_sources: list[str] = []
