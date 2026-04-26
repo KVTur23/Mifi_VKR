@@ -166,17 +166,17 @@ def translate_batch(
                 forced_bos_token_id=target_lang_id,
                 max_length=MAX_LENGTH,
                 min_length=64,
-                do_sample=False,
-                num_beams=TRANSLATION_NUM_BEAMS,
-                # NLLB на наших анонимизированных текстах с маркерами <0>, <1>
-                # и техническими аббревиатурами (НГКМ, п/о, No) сваливается в
-                # дегенерацию: возвращает "< < < < <" или "Ministry Ministry Ministry".
-                # repetition_penalty + no_repeat_ngram_size штрафуют повторы
-                # и блокируют 3-граммы — это убирает зацикленные паттерны.
+                # На main ветке здесь был sampling и NLLB не дегенерировала.
+                # Beam search детерминированно даёт похожие переводы для похожих
+                # писем → много точных дубликатов. Sampling с temperature=1.0
+                # + anti-degeneration (no_repeat_ngram_size + repetition_penalty)
+                # даёт разнообразие и подавляет зацикленные "< < < <" паттерны.
+                do_sample=True,
+                temperature=1.0,
+                top_p=0.9,
                 repetition_penalty=1.3,
                 no_repeat_ngram_size=3,
                 length_penalty=1.0,
-                early_stopping=True,
             )
 
         translated = tokenizer.batch_decode(outputs, skip_special_tokens=True)
