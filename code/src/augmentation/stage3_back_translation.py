@@ -54,9 +54,12 @@ LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 MAX_LENGTH = 512
 TRANSLATION_NUM_BEAMS = 2
+NLLB_CHUNK_CHARS = 600
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
+_SENT_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
+_PARA_SPLIT_RE = re.compile(r'\n\n+')
 
 # промежуточный csv для пар фазы 1 — при рестарте подхватываем и сразу в фазу 2
 _PAIRS_CSV = DATA_DIR / "_stage3_pairs_cache.csv"
@@ -84,6 +87,54 @@ def unmask_placeholders(text: str, placeholders: list[str]) -> str:
     for i, ph in enumerate(placeholders):
         text = text.replace(f"<{i}>", ph, 1)
     return text
+
+
+def split_into_chunks(text: str, max_chars: int = NLLB_CHUNK_CHARS) -> list[str]:
+    """
+    Бьёт письмо на короткие фрагменты для NLLB.
+
+    Длинные письма целиком часто приводят NLLB к обрезкам, зацикливаниям и
+    латинице вместо русского. Делаем так же, как в ruT5 stage2: сначала абзацы,
+    затем предложения, и только последнее средство — грубый разрез.
+    """
+    if not text or not text.strip():
+        return []
+
+    paragraphs = [p.strip() for p in _PARA_SPLIT_RE.split(text) if p.strip()]
+    if not paragraphs:
+        paragraphs = [text.strip()]
+
+    chunks: list[str] = []
+    for para in paragraphs:
+        if len(para) <= max_chars:
+            chunks.append(para)
+            continue
+
+        sentences = _SENT_SPLIT_RE.split(para)
+        buf = ""
+        for sent in sentences:
+            sent = sent.strip()
+            if not sent:
+                continue
+            if len(sent) > max_chars:
+                if buf:
+                    chunks.append(buf)
+                    buf = ""
+                for i in range(0, len(sent), max_chars):
+                    part = sent[i:i + max_chars].strip()
+                    if part:
+                        chunks.append(part)
+                continue
+            if len(buf) + len(sent) + 1 <= max_chars:
+                buf = (buf + " " + sent).strip() if buf else sent
+            else:
+                if buf:
+                    chunks.append(buf)
+                buf = sent
+        if buf:
+            chunks.append(buf)
+
+    return chunks
 
 
 # --- LLM-translator (для экспериментов где перевод делает не NLLB, а инструкционная LLM) ---
@@ -488,18 +539,9 @@ def translate_batch(
                 **inputs,
                 forced_bos_token_id=target_lang_id,
                 max_length=MAX_LENGTH,
-                min_length=64,
-                # На main ветке здесь был sampling и NLLB не дегенерировала.
-                # Beam search детерминированно даёт похожие переводы для похожих
-                # писем → много точных дубликатов. Sampling с temperature=1.0
-                # + anti-degeneration (no_repeat_ngram_size + repetition_penalty)
-                # даёт разнообразие и подавляет зацикленные "< < < <" паттерны.
-                do_sample=True,
-                temperature=1.0,
-                top_p=0.9,
-                repetition_penalty=1.3,
-                no_repeat_ngram_size=3,
-                length_penalty=1.0,
+                num_beams=TRANSLATION_NUM_BEAMS,
+                do_sample=False,
+                early_stopping=True,
             )
 
         translated = tokenizer.batch_decode(outputs, skip_special_tokens=True)
@@ -533,19 +575,31 @@ def back_translate(
     Перед переводом маскируем [PERSON], [ORGANIZATION] и т.д. в короткие <0>, <1>, ...
     После перевода восстанавливаем обратно.
     """
-    # маскируем плейсхолдеры — NLLB их не ломает
-    masked_texts = []
+    # Маскируем плейсхолдеры и режем документы на короткие куски.
+    # NLLB значительно стабильнее на 400-600 символах, чем на письме целиком.
+    all_chunks: list[str] = []
+    doc_chunk_ranges: list[tuple[int, int]] = []
     all_placeholders = []
     for text in texts:
         masked, phs = mask_placeholders(text)
-        masked_texts.append(masked)
         all_placeholders.append(phs)
+        chunks = split_into_chunks(masked)
+        start = len(all_chunks)
+        all_chunks.extend(chunks)
+        end = len(all_chunks)
+        doc_chunk_ranges.append((start, end))
+
+    if not all_chunks:
+        return [""] * len(texts)
+
+    print(f"  Всего NLLB-чанков: {len(all_chunks)} "
+          f"(в среднем {len(all_chunks) / max(len(texts), 1):.1f} на документ)")
 
     # RU → EN
     en_texts = []
     batch_size = min(BATCH_SIZE, MAX_NLLB_BATCH_SIZE)
-    for i in tqdm(range(0, len(masked_texts), batch_size), desc="    RU→EN", leave=False):
-        batch = masked_texts[i:i + batch_size]
+    for i in tqdm(range(0, len(all_chunks), batch_size), desc="    RU→EN", leave=False):
+        batch = all_chunks[i:i + batch_size]
         en_texts.extend(translate_batch(batch, model, tokenizer, LANG_RU, LANG_EN, device))
 
     # EN → RU
@@ -554,10 +608,11 @@ def back_translate(
         batch = en_texts[i:i + batch_size]
         ru_texts.extend(translate_batch(batch, model, tokenizer, LANG_EN, LANG_RU, device))
 
-    # восстанавливаем плейсхолдеры
+    # Собираем чанки обратно в документы и восстанавливаем плейсхолдеры.
     result = []
-    for text, phs in zip(ru_texts, all_placeholders):
-        result.append(unmask_placeholders(text.strip(), phs))
+    for (start, end), phs in zip(doc_chunk_ranges, all_placeholders):
+        pieces = [p.strip() for p in ru_texts[start:end] if p and p.strip()]
+        result.append(unmask_placeholders("\n\n".join(pieces), phs))
 
     return result
 
