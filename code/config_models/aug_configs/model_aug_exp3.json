@@ -14,13 +14,11 @@
   },
   "prompt_template": "llm_generate_one.txt",
   "translator": {
-    "backend": "llama_cpp",
-    "model_repo": "models--mradermacher--YanoljaNEXT-Rosetta-20B-GGUF",
-    "model_file": "YanoljaNEXT-Rosetta-20B.Q4_K_M.gguf",
+    "backend": "llm",
+    "model_name": "google/translategemma-12b-it",
     "max_seq_length": 4096,
     "max_new_tokens": 2048,
     "temperature": 0.3,
-    "top_p": 0.9,
-    "n_gpu_layers": -1
+    "top_p": 0.9
   }
 }
