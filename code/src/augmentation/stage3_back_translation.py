@@ -43,17 +43,17 @@ from src.augmentation.validation import validate_generated_texts
 STAGE = 3
 TARGET_COUNT = 50
 MAX_RETRIES = 20
-MODEL_NLLB = "facebook/nllb-200-3.3B"
+MODEL_NLLB = "facebook/nllb-200-distilled-1.3B"
 BATCH_SIZE = 64
 OVERSAMPLE_FACTOR = 3
 MIN_JUDGE_SCORE_STAGE3 = 2.5
-MAX_NLLB_BATCH_SIZE = 16
+MAX_NLLB_BATCH_SIZE = 64
 
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 MAX_LENGTH = 512
 TRANSLATION_NUM_BEAMS = 2
-NLLB_CHUNK_CHARS = 600
+NLLB_CHUNK_CHARS = 1500
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
@@ -88,7 +88,7 @@ def unmask_placeholders(text: str, placeholders: list[str]) -> str:
     return text
 
 
-def split_into_chunks(text: str, max_chars: int = NLLB_CHUNK_CHARS) -> list[str]:
+def split_into_chunks(text: str, max_chars: int | None = None) -> list[str]:
     """
     Бьёт письмо на короткие фрагменты для NLLB.
 
@@ -98,6 +98,9 @@ def split_into_chunks(text: str, max_chars: int = NLLB_CHUNK_CHARS) -> list[str]
     """
     if not text or not text.strip():
         return []
+
+    if max_chars is None:
+        max_chars = NLLB_CHUNK_CHARS
 
     paragraphs = [p.strip() for p in _PARA_SPLIT_RE.split(text) if p.strip()]
     if not paragraphs:
@@ -641,7 +644,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     1. NLLB перевод + валидация фильтрами (20 попыток, копим пары оригинал→перевод)
     2. Выгружаем NLLB, грузим vLLM — LLM-судья отбирает лучшие переводы
     """
-    global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3
+    global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3, NLLB_CHUNK_CHARS
 
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage3
@@ -649,6 +652,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         MAX_RETRIES = s.max_retries
         OVERSAMPLE_FACTOR = s.oversample_factor
         MIN_JUDGE_SCORE_STAGE3 = s.min_judge_score
+        NLLB_CHUNK_CHARS = s.get("nllb_chunk_chars", NLLB_CHUNK_CHARS)
         MODEL_NLLB = pipeline_cfg.gpu.nllb_model
         BATCH_SIZE = min(pipeline_cfg.gpu.nllb_batch_size, MAX_NLLB_BATCH_SIZE)
 
@@ -658,6 +662,9 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     print("=" * 60)
     print("ЭТАП 3: Обратный перевод (< 50 → 50)")
     print("=" * 60)
+    print(f"[Перевод] NLLB: {MODEL_NLLB}, batch={BATCH_SIZE}, "
+          f"max_batch={MAX_NLLB_BATCH_SIZE}, chunk_chars={NLLB_CHUNK_CHARS}, "
+          f"beams={TRANSLATION_NUM_BEAMS}")
 
     # ==========================================================
     # Определяем сценарий запуска:
