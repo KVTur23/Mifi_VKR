@@ -19,6 +19,7 @@ import gc
 import json
 import random
 import argparse
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -552,6 +553,36 @@ def load_sbert_for_stage3():
     return sbert
 
 
+def clear_validation_sbert() -> None:
+    """Сбрасывает кэш SBERT в модуле validation и чистит CUDA-память."""
+    import src.augmentation.validation as val_module
+
+    val_module._sbert_model = None
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def restore_valid_pairs(
+    candidates: list[str],
+    originals: list[str],
+    valid_texts: list[str],
+) -> list[tuple[str, str]]:
+    """
+    Восстанавливает пары (перевод, оригинал), сохраняя кратность valid_texts.
+
+    Через set(valid_texts) делать нельзя: если одинаковый перевод встречается в
+    candidates несколько раз, пул может получить больше пар, чем прошло фильтры.
+    """
+    valid_counts = Counter(valid_texts)
+    pairs = []
+    for text, original in zip(candidates, originals):
+        if valid_counts[text] > 0:
+            pairs.append((text, original))
+            valid_counts[text] -= 1
+    return pairs
+
+
 def translate_batch(
     texts: list[str],
     model: AutoModelForSeq2SeqLM,
@@ -785,12 +816,11 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         use_llm_translator = backend == "llm"
         use_llamacpp_translator = backend == "llama_cpp"
 
+        llm_tr = None
+        sbert_model = None
         if use_llm_translator:
-            llm_tr, sp_tr = load_llm_translator(translator_cfg, pipeline_cfg)
             translator_model_name = translator_cfg.get("model_name", "")
-            translate_fn = lambda srcs: back_translate_llm(
-                srcs, llm_tr, sp_tr, translator_model_name
-            )
+            translate_fn = None
             model = tokenizer = device = None
         elif use_llamacpp_translator:
             llm_tr, gen_params_tr = load_llamacpp_translator(translator_cfg)
@@ -801,7 +831,8 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             translate_fn = lambda srcs: back_translate(srcs, model, tokenizer, device)
             llm_tr = None
 
-        sbert_model = load_sbert_for_stage3()
+        if not use_llm_translator:
+            sbert_model = load_sbert_for_stage3()
 
         for attempt in range(1, MAX_RETRIES + 1):
             # перевод останавливается когда класс набрал 2x от нужного,
@@ -815,12 +846,10 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
             print(f"\n[Этап 3] Попытка {attempt}/{MAX_RETRIES}: "
                   f"{len(pending)} классов ещё набирают кандидатов")
+            attempt_temp = None
             if use_llm_translator:
                 attempt_temp = get_translator_temperature_for_attempt(
                     translator_cfg, attempt
-                )
-                sp_tr = make_translator_sampling_params(
-                    translator_cfg, temperature=attempt_temp
                 )
                 print(f"  [Перевод/LLM] Попытка {attempt}: "
                       f"temperature={attempt_temp}, "
@@ -840,13 +869,29 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             print(f"  Всего источников для перевода: {len(all_sources)}")
 
             # один большой RU→EN→RU прогон (NLLB или LLM-translator — зависит от конфига)
-            all_translated = translate_fn(all_sources)
+            if use_llm_translator:
+                llm_tr, _ = load_llm_translator(translator_cfg, pipeline_cfg)
+                sp_tr = make_translator_sampling_params(
+                    translator_cfg, temperature=attempt_temp
+                )
+                all_translated = back_translate_llm(
+                    all_sources, llm_tr, sp_tr, translator_model_name
+                )
+                print("  [Перевод/LLM] Попытка завершена, выгружаю переводчик перед SBERT")
+                unload_vllm(llm_tr)
+                llm_tr = None
+                clear_validation_sbert()
+            else:
+                all_translated = translate_fn(all_sources)
 
             # разбиваем по классам, сохраняя пары (перевод, оригинал)
             pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
             for translated, source, cls_name in zip(all_translated, all_sources, source_class):
                 if translated.strip():
                     pairs_by_class[cls_name].append((translated.strip(), source))
+
+            if use_llm_translator:
+                sbert_model = load_sbert_for_stage3()
 
             # валидируем по классам, сохраняя связь перевод→оригинал
             for class_name, state in class_state.items():
@@ -868,11 +913,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 n_after_validation = len(valid)
 
                 # восстанавливаем пары для текстов что прошли фильтры
-                valid_set = set(valid)
-                valid_pairs = [
-                    (t, o) for t, o in zip(candidates, candidate_originals)
-                    if t in valid_set
-                ]
+                valid_pairs = restore_valid_pairs(candidates, candidate_originals, valid)
 
                 # берём всё что прошло фильтры — судья потом отберёт лучшие
                 state["accepted_pairs"].extend(valid_pairs)
@@ -894,13 +935,21 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 pd.DataFrame(cache_rows).to_csv(_PAIRS_CSV, index=False)
                 print(f"  [Кэш] Попытка {attempt}: сохранено {len(cache_rows)} пар")
 
+            if use_llm_translator:
+                print("  [Валидация] Попытка завершена, выгружаю SBERT")
+                unload_from_gpu(sbert_model)
+                sbert_model = None
+                clear_validation_sbert()
+
         # чистим GPU — переводчик и SBERT больше не нужны
         print("\n[Этап 3] Фаза 1 завершена, выгружаем переводчик...")
         if use_llm_translator:
-            unload_vllm(llm_tr)
-            llm_tr = None
-            unload_from_gpu(sbert_model)
-            sbert_model = None
+            if llm_tr is not None:
+                unload_vllm(llm_tr)
+                llm_tr = None
+            if sbert_model is not None:
+                unload_from_gpu(sbert_model)
+                sbert_model = None
         elif use_llamacpp_translator:
             unload_llamacpp(llm_tr)
             llm_tr = None
@@ -909,11 +958,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         else:
             unload_from_gpu(model, tokenizer, sbert_model)
             model = tokenizer = sbert_model = None
-        import src.augmentation.validation as val_module
-        val_module._sbert_model = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        clear_validation_sbert()
 
     # ==========================================================
     # Фаза 2: грузим vLLM — судья отбирает лучшие переводы
