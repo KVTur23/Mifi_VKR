@@ -493,12 +493,12 @@ def unload_from_gpu(*objects):
 
 
 def load_sbert_for_stage3():
-    """Грузит SBERT на CPU, чтобы не конкурировать с NLLB за VRAM."""
+    """Грузит SBERT на GPU рядом с distilled NLLB, если CUDA доступна."""
     from src.augmentation.validation import SBERT_MODEL_NAME
     from sentence_transformers import SentenceTransformer
     import src.augmentation.validation as val_module
 
-    device = "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if val_module._sbert_model is not None:
         del val_module._sbert_model
