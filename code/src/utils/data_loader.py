@@ -33,7 +33,7 @@ STAGE_FILES = {
 }
 
 # Путь к папке с данными — Data/ лежит рядом с src/
-DATA_DIR = Path(__file__).parent.parent.parent / "Data" / 1
+DATA_DIR = Path(__file__).parent.parent.parent / "Data" / "1"
 
 
 def load_dataset(stage: int, data_dir: str | Path | None = None) -> pd.DataFrame:
