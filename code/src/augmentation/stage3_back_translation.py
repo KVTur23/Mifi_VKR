@@ -49,6 +49,9 @@ BATCH_SIZE = 64
 OVERSAMPLE_FACTOR = 3
 MIN_JUDGE_SCORE_STAGE3 = 2.5
 MAX_NLLB_BATCH_SIZE = 64
+SIMILARITY_THRESHOLD_STAGE3 = 0.95
+SIMILARITY_THRESHOLD_MAX_STAGE3 = 0.98
+SIMILARITY_THRESHOLD_STEP_STAGE3 = 0.01
 
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
@@ -63,6 +66,15 @@ _PARA_SPLIT_RE = re.compile(r'\n\n+')
 
 # промежуточный csv для пар фазы 1 — при рестарте подхватываем и сразу в фазу 2
 _PAIRS_CSV = DATA_DIR / "_stage3_pairs_cache.csv"
+
+
+def similarity_threshold_for_attempt(attempt: int) -> float:
+    """Со второй попытки мягче пропускаем близкие back-translation тексты."""
+    extra_steps = max(attempt - 1, 0)
+    return min(
+        SIMILARITY_THRESHOLD_MAX_STAGE3,
+        SIMILARITY_THRESHOLD_STAGE3 + SIMILARITY_THRESHOLD_STEP_STAGE3 * extra_steps,
+    )
 
 
 def mask_placeholders(text: str) -> tuple[str, list[str]]:
@@ -671,7 +683,8 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     1. NLLB перевод + валидация фильтрами (20 попыток, копим пары оригинал→перевод)
     2. Выгружаем NLLB, грузим vLLM — LLM-судья отбирает лучшие переводы
     """
-    global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3, NLLB_CHUNK_CHARS
+    global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR
+    global MIN_JUDGE_SCORE_STAGE3, NLLB_CHUNK_CHARS, SIMILARITY_THRESHOLD_MAX_STAGE3
 
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage3
@@ -680,6 +693,10 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         OVERSAMPLE_FACTOR = s.oversample_factor
         MIN_JUDGE_SCORE_STAGE3 = s.min_judge_score
         NLLB_CHUNK_CHARS = s.get("nllb_chunk_chars", NLLB_CHUNK_CHARS)
+        SIMILARITY_THRESHOLD_MAX_STAGE3 = pipeline_cfg.validation.get(
+            "similarity_threshold_max",
+            SIMILARITY_THRESHOLD_MAX_STAGE3,
+        )
         MODEL_NLLB = pipeline_cfg.gpu.nllb_model
         BATCH_SIZE = min(pipeline_cfg.gpu.nllb_batch_size, MAX_NLLB_BATCH_SIZE)
 
@@ -782,8 +799,11 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             if not pending:
                 break
 
+            similarity_threshold = similarity_threshold_for_attempt(attempt)
+
             print(f"\n[Этап 3] Попытка {attempt}/{MAX_RETRIES}: "
                   f"{len(pending)} классов ещё набирают кандидатов")
+            print(f"  Порог cosine similarity: {similarity_threshold:.2f}")
 
             # собираем все оригиналы в один список — переводим одним прогоном
             all_sources: list[str] = []
@@ -823,6 +843,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 valid = validate_generated_texts(
                     candidates, current_existing, class_name,
                     sbert_model=sbert_model,
+                    similarity_threshold=similarity_threshold,
                 )
                 n_after_validation = len(valid)
 
