@@ -35,6 +35,7 @@ from src.utils.data_loader import (
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
     DATA_DIR, STAGE_FILES,
 )
+from src.utils.config_loader import load_model_config
 from src.augmentation.validation import validate_generated_texts
 
 
@@ -81,6 +82,186 @@ def unmask_placeholders(text: str, placeholders: list[str]) -> str:
     for i, ph in enumerate(placeholders):
         text = text.replace(f"<{i}>", ph, 1)
     return text
+
+
+# --- TranslateGemma translator backend for stage3 ---
+
+TRANSLATEGEMMA_RU = "ru"
+TRANSLATEGEMMA_EN = "en"
+
+
+def get_translator_temperature_for_attempt(
+    translator_cfg: dict,
+    attempt: int,
+) -> float:
+    """Returns translator temperature for a stage3 retry attempt."""
+    schedule = translator_cfg.get("temperature_schedule")
+    if schedule:
+        idx = min(max(attempt - 1, 0), len(schedule) - 1)
+        return float(schedule[idx])
+    return float(translator_cfg.get("temperature", 0.3))
+
+
+def make_translator_sampling_params(
+    translator_cfg: dict,
+    temperature: float | None = None,
+):
+    """Builds vLLM SamplingParams for TranslateGemma."""
+    from vllm import SamplingParams
+
+    return SamplingParams(
+        temperature=(
+            float(translator_cfg.get("temperature", 0.3))
+            if temperature is None else float(temperature)
+        ),
+        top_p=float(translator_cfg.get("top_p", 0.9)),
+        max_tokens=int(translator_cfg.get("max_new_tokens", 2048)),
+    )
+
+
+def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
+    """Loads TranslateGemma through vLLM."""
+    from vllm import LLM
+
+    model_name = translator_cfg["model_name"]
+    max_len = int(translator_cfg.get("max_seq_length", 4096))
+
+    gpu_mem = 0.90
+    eager = True
+    if pipeline_cfg is not None:
+        gpu_mem = pipeline_cfg.gpu.gpu_memory_utilization
+        eager = pipeline_cfg.gpu.enforce_eager
+    gpu_mem = float(translator_cfg.get("gpu_memory_utilization", gpu_mem))
+
+    print(f"[Перевод/TranslateGemma] Загружаю через vLLM: {model_name}")
+    llm = LLM(
+        model=model_name,
+        trust_remote_code=True,
+        max_model_len=max_len,
+        gpu_memory_utilization=gpu_mem,
+        enforce_eager=eager,
+    )
+
+    print(f"[Перевод/TranslateGemma] Модель загружена "
+          f"(gpu_memory_utilization={gpu_mem})")
+    return llm
+
+
+def unload_vllm(llm) -> None:
+    """Unloads a vLLM model and clears CUDA memory before loading SBERT/judge."""
+    try:
+        from vllm.distributed.parallel_state import destroy_model_parallel
+        destroy_model_parallel()
+    except Exception:
+        pass
+    del llm
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+    print("[GPU] vLLM-переводчик выгружен")
+
+
+def _is_translategemma(model_name: str) -> bool:
+    return "translategemma" in model_name.lower()
+
+
+def _extract_vllm_text(outputs) -> list[str | None]:
+    result = []
+    for output in outputs:
+        text = output.outputs[0].text.strip() if output.outputs else None
+        result.append(text if text else None)
+    return result
+
+
+def translate_batch_translategemma(
+    texts: list[str],
+    llm,
+    sampling_params,
+    source_lang: str,
+    target_lang: str,
+) -> list[str | None]:
+    """
+    Translates a batch through google/translategemma-*.
+
+    TranslateGemma needs structured chat-template content with
+    source_lang_code/target_lang_code. vLLM's llm.chat() normalizes messages and
+    drops those custom fields, so we apply the tokenizer chat template manually
+    and pass prompt strings to llm.generate().
+    """
+    if not texts:
+        return []
+
+    tokenizer = llm.get_tokenizer()
+    prompts: list[str] = []
+    for text in texts:
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "source_lang_code": source_lang,
+                        "target_lang_code": target_lang,
+                        "text": text,
+                    }
+                ],
+            }
+        ]
+        prompts.append(
+            tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        )
+
+    try:
+        outputs = llm.generate(prompts, sampling_params)
+        return _extract_vllm_text(outputs)
+    except Exception as e:
+        print(f"[Перевод/TranslateGemma] Батч упал, пробую по одному: {e}")
+
+    result: list[str | None] = []
+    for i, prompt in enumerate(prompts, start=1):
+        try:
+            outputs = llm.generate([prompt], sampling_params)
+            result.extend(_extract_vllm_text(outputs))
+        except Exception as e:
+            if i <= 3:
+                print(f"[Перевод/TranslateGemma] Ошибка на тексте {i}: {e}")
+            result.append(None)
+    return result
+
+
+def back_translate_translategemma(texts: list[str], llm, sampling_params) -> list[str]:
+    """Back-translates through TranslateGemma: RU -> EN -> RU."""
+    masked_texts = []
+    all_placeholders = []
+    for text in texts:
+        masked, phs = mask_placeholders(text)
+        masked_texts.append(masked)
+        all_placeholders.append(phs)
+
+    en_texts = translate_batch_translategemma(
+        masked_texts,
+        llm,
+        sampling_params,
+        TRANSLATEGEMMA_RU,
+        TRANSLATEGEMMA_EN,
+    )
+    ru_texts = translate_batch_translategemma(
+        [text or "" for text in en_texts],
+        llm,
+        sampling_params,
+        TRANSLATEGEMMA_EN,
+        TRANSLATEGEMMA_RU,
+    )
+
+    result = []
+    for text, phs in zip(ru_texts, all_placeholders):
+        result.append(unmask_placeholders((text or "").strip(), phs))
+    return result
 
 
 def load_translation_models() -> tuple:
@@ -322,8 +503,20 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         # судья потом отберёт лучшие по рейтингу
         # ==========================================================
 
-        model, tokenizer, device = load_translation_models()
-        sbert_model = load_sbert_on_gpu()
+        model_cfg_for_translation = load_model_config(config_path)
+        translator_cfg = model_cfg_for_translation.get("translator") or {}
+        use_translategemma = (
+            translator_cfg.get("backend") == "llm"
+            and _is_translategemma(translator_cfg.get("model_name", ""))
+        )
+
+        if use_translategemma:
+            print("[Этап 3] Фаза 1: переводчик TranslateGemma включён из конфига")
+            model = tokenizer = device = None
+            sbert_model = None
+        else:
+            model, tokenizer, device = load_translation_models()
+            sbert_model = load_sbert_on_gpu()
 
         for attempt in range(1, MAX_RETRIES + 1):
             # перевод останавливается когда класс набрал 2x от нужного,
@@ -352,7 +545,28 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             print(f"  Всего источников для перевода: {len(all_sources)}")
 
             # один большой RU→EN→RU прогон
-            all_translated = back_translate(all_sources, model, tokenizer, device)
+            if use_translategemma:
+                attempt_temp = get_translator_temperature_for_attempt(
+                    translator_cfg, attempt
+                )
+                print(f"  [Перевод/TranslateGemma] Попытка {attempt}: "
+                      f"temperature={attempt_temp}, "
+                      f"top_p={translator_cfg.get('top_p', 0.9)}")
+                llm_tr = load_llm_translator(translator_cfg, pipeline_cfg)
+                sampling_params_tr = make_translator_sampling_params(
+                    translator_cfg,
+                    temperature=attempt_temp,
+                )
+                all_translated = back_translate_translategemma(
+                    all_sources,
+                    llm_tr,
+                    sampling_params_tr,
+                )
+                unload_vllm(llm_tr)
+                llm_tr = None
+                sbert_model = load_sbert_on_gpu()
+            else:
+                all_translated = back_translate(all_sources, model, tokenizer, device)
 
             # разбиваем по классам, сохраняя пары (перевод, оригинал)
             pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
@@ -406,9 +620,19 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 pd.DataFrame(cache_rows).to_csv(_PAIRS_CSV, index=False)
                 print(f"  [Кэш] Попытка {attempt}: сохранено {len(cache_rows)} пар")
 
-        # чистим GPU — NLLB и SBERT больше не нужны
-        print("\n[Этап 3] Фаза 1 завершена, выгружаем NLLB...")
-        unload_from_gpu(model, tokenizer, sbert_model)
+            if use_translategemma:
+                unload_from_gpu(sbert_model)
+                sbert_model = None
+                import src.augmentation.validation as val_module
+                val_module._sbert_model = None
+
+        # чистим GPU — переводчик и SBERT больше не нужны
+        print("\n[Этап 3] Фаза 1 завершена, выгружаем переводчик...")
+        if use_translategemma:
+            if sbert_model is not None:
+                unload_from_gpu(sbert_model)
+        else:
+            unload_from_gpu(model, tokenizer, sbert_model)
         model = tokenizer = sbert_model = None
         import src.augmentation.validation as val_module
         val_module._sbert_model = None
