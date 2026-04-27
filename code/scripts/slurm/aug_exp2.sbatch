@@ -11,7 +11,8 @@
 #SBATCH --output=/mnt/pool/6/kvturanosov/VKR/code/logs/aug_exp2_%j.log
 #SBATCH --error=/mnt/pool/6/kvturanosov/VKR/code/logs/aug_exp2_%j.err
 
-# exp-aug-2: RuadaptQwen3-32B-Instruct-AWQ на всех этапах LLM + NLLB distilled-1.3B на переводе
+# exp-aug-2: stage1/stage2 и данные как exp-aug-1 (Qwen3-32B-AWQ),
+# stage3 — обратный перевод через google/translategemma-12b-it + Qwen-судья.
 # Pre-синхронизация — отдельным джобом aug_pre.sbatch (ветка exp-aug-1).
 
 set -e
@@ -45,7 +46,7 @@ python -u src/augmentation/stage1_llm_generate.py --config $EXP_CFG
 echo "=== $(date) | STAGE 2: парафраз ==="
 python -u src/augmentation/stage2_paraphrase.py --config $EXP_CFG
 
-echo "=== $(date) | STAGE 3: обратный перевод ==="
+echo "=== $(date) | STAGE 3: обратный перевод через TranslateGemma + Qwen-судья ==="
 python -u src/augmentation/stage3_back_translation.py --config $EXP_CFG
 
 echo "=== $(date) | POST: rsync результатов в pool ==="

@@ -19,6 +19,7 @@ import gc
 import json
 import random
 import argparse
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -35,6 +36,7 @@ from src.utils.data_loader import (
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
     DATA_DIR, STAGE_FILES,
 )
+from src.utils.config_loader import load_model_config
 from src.augmentation.validation import validate_generated_texts
 
 
@@ -43,17 +45,17 @@ from src.augmentation.validation import validate_generated_texts
 STAGE = 3
 TARGET_COUNT = 50
 MAX_RETRIES = 20
-MODEL_NLLB = "facebook/nllb-200-distilled-1.3B"
+MODEL_NLLB = "facebook/nllb-200-3.3B"
 BATCH_SIZE = 64
 OVERSAMPLE_FACTOR = 3
 MIN_JUDGE_SCORE_STAGE3 = 2.5
-MAX_NLLB_BATCH_SIZE = 64
+MAX_NLLB_BATCH_SIZE = 16
 
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 MAX_LENGTH = 512
 TRANSLATION_NUM_BEAMS = 2
-NLLB_CHUNK_CHARS = 1500
+NLLB_CHUNK_CHARS = 600
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
@@ -88,7 +90,7 @@ def unmask_placeholders(text: str, placeholders: list[str]) -> str:
     return text
 
 
-def split_into_chunks(text: str, max_chars: int | None = None) -> list[str]:
+def split_into_chunks(text: str, max_chars: int = NLLB_CHUNK_CHARS) -> list[str]:
     """
     Бьёт письмо на короткие фрагменты для NLLB.
 
@@ -98,9 +100,6 @@ def split_into_chunks(text: str, max_chars: int | None = None) -> list[str]:
     """
     if not text or not text.strip():
         return []
-
-    if max_chars is None:
-        max_chars = NLLB_CHUNK_CHARS
 
     paragraphs = [p.strip() for p in _PARA_SPLIT_RE.split(text) if p.strip()]
     if not paragraphs:
@@ -156,12 +155,41 @@ TRANSLATEGEMMA_RU = "ru"
 TRANSLATEGEMMA_EN = "en"
 
 
+def get_translator_temperature_for_attempt(
+    translator_cfg: dict,
+    attempt: int,
+) -> float:
+    """Возвращает температуру LLM-переводчика для текущей попытки stage3."""
+    schedule = translator_cfg.get("temperature_schedule")
+    if schedule:
+        idx = min(max(attempt - 1, 0), len(schedule) - 1)
+        return float(schedule[idx])
+    return float(translator_cfg.get("temperature", 0.3))
+
+
+def make_translator_sampling_params(
+    translator_cfg: dict,
+    temperature: float | None = None,
+):
+    """Собирает vLLM SamplingParams для LLM-переводчика."""
+    from vllm import SamplingParams
+
+    return SamplingParams(
+        temperature=(
+            float(translator_cfg.get("temperature", 0.3))
+            if temperature is None else float(temperature)
+        ),
+        top_p=float(translator_cfg.get("top_p", 0.9)),
+        max_tokens=int(translator_cfg.get("max_new_tokens", 2048)),
+    )
+
+
 def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
     """
     Грузит LLM-переводчик (Rosetta-20B и т.п.) через vLLM.
     Отдельная функция — чтобы не смешивать с load_llm из llm_utils, у которой другой контракт.
     """
-    from vllm import LLM, SamplingParams
+    from vllm import LLM
 
     model_name = translator_cfg["model_name"]
     max_len = translator_cfg.get("max_seq_length", 4096)
@@ -171,6 +199,7 @@ def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
     if pipeline_cfg is not None:
         gpu_mem = pipeline_cfg.gpu.gpu_memory_utilization
         eager = pipeline_cfg.gpu.enforce_eager
+    gpu_mem = float(translator_cfg.get("gpu_memory_utilization", gpu_mem))
 
     print(f"[Перевод/LLM] Загружаю переводчик через vLLM: {model_name}")
 
@@ -187,13 +216,13 @@ def load_llm_translator(translator_cfg: dict, pipeline_cfg=None) -> tuple:
         enforce_eager=eager,
     )
 
-    sp = SamplingParams(
-        temperature=translator_cfg.get("temperature", 0.3),
-        top_p=translator_cfg.get("top_p", 0.9),
-        max_tokens=translator_cfg.get("max_new_tokens", 2048),
-    )
+    sp = make_translator_sampling_params(translator_cfg)
 
-    print(f"[Перевод/LLM] Переводчик загружен: {model_name}")
+    print(f"[Перевод/LLM] Переводчик загружен: {model_name} "
+          f"(gpu_memory_utilization={gpu_mem})")
+    print(f"[Перевод/LLM] Sampling: temperature={translator_cfg.get('temperature', 0.3)}, "
+          f"top_p={translator_cfg.get('top_p', 0.9)}, "
+          f"max_tokens={translator_cfg.get('max_new_tokens', 2048)}")
     return llm, sp
 
 
@@ -236,14 +265,20 @@ def translate_batch_translategemma(
     Переводит батч через google/translategemma-*.
 
     У TranslateGemma собственный chat template: user.content должен быть списком
-    из одного text-item с source_lang_code/target_lang_code. Обычный prompt-string
-    падает на применении шаблона.
+    из одного text-item с source_lang_code/target_lang_code. Через llm.chat()
+    это не работает — vllm.chat() сам нормализует messages в OpenAI-формат и
+    режет наши кастомные поля до того как chat_template их увидит. Поэтому
+    применяем chat_template вручную через tokenizer.apply_chat_template и потом
+    отдаём llm.generate уже готовые промпт-строки.
     """
     if not texts:
         return []
 
-    conversations = [
-        [
+    tokenizer = llm.get_tokenizer()
+
+    prompts: list[str] = []
+    for text in texts:
+        messages = [
             {
                 "role": "user",
                 "content": [
@@ -256,19 +291,23 @@ def translate_batch_translategemma(
                 ],
             }
         ]
-        for text in texts
-    ]
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        prompts.append(prompt)
 
     try:
-        outputs = llm.chat(conversations, sampling_params)
+        outputs = llm.generate(prompts, sampling_params)
         return _extract_vllm_text(outputs)
     except Exception as e:
         print(f"[Перевод/TranslateGemma] Батч упал, пробую по одному: {e}")
 
     result: list[str | None] = []
-    for i, conv in enumerate(conversations, start=1):
+    for i, prompt in enumerate(prompts, start=1):
         try:
-            outputs = llm.chat([conv], sampling_params)
+            outputs = llm.generate([prompt], sampling_params)
             result.extend(_extract_vllm_text(outputs))
         except Exception as e:
             if i <= 3:
@@ -460,6 +499,7 @@ def back_translate_llamacpp(texts: list[str], llm, gen_params: dict) -> list[str
         result.append(unmask_placeholders((text or "").strip(), phs))
     return result
 
+
 def load_translation_models() -> tuple:
     """Грузит NLLB-200 на GPU (или CPU если нет)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -493,7 +533,7 @@ def unload_from_gpu(*objects):
 
 
 def load_sbert_for_stage3():
-    """Грузит SBERT на GPU рядом с distilled NLLB, если CUDA доступна."""
+    """Грузит SBERT на GPU, если он доступен, иначе на CPU."""
     from src.augmentation.validation import SBERT_MODEL_NAME
     from sentence_transformers import SentenceTransformer
     import src.augmentation.validation as val_module
@@ -511,6 +551,36 @@ def load_sbert_for_stage3():
     sbert = SentenceTransformer(SBERT_MODEL_NAME, device=device)
     print(f"[Валидация] SBERT загружена на {device}")
     return sbert
+
+
+def clear_validation_sbert() -> None:
+    """Сбрасывает кэш SBERT в модуле validation и чистит CUDA-память."""
+    import src.augmentation.validation as val_module
+
+    val_module._sbert_model = None
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def restore_valid_pairs(
+    candidates: list[str],
+    originals: list[str],
+    valid_texts: list[str],
+) -> list[tuple[str, str]]:
+    """
+    Восстанавливает пары (перевод, оригинал), сохраняя кратность valid_texts.
+
+    Через set(valid_texts) делать нельзя: если одинаковый перевод встречается в
+    candidates несколько раз, пул может получить больше пар, чем прошло фильтры.
+    """
+    valid_counts = Counter(valid_texts)
+    pairs = []
+    for text, original in zip(candidates, originals):
+        if valid_counts[text] > 0:
+            pairs.append((text, original))
+            valid_counts[text] -= 1
+    return pairs
 
 
 def translate_batch(
@@ -577,7 +647,7 @@ def back_translate(
     После перевода восстанавливаем обратно.
     """
     # Маскируем плейсхолдеры и режем документы на короткие куски.
-    # NLLB значительно стабильнее на ограниченных чанках, чем на письме целиком.
+    # NLLB значительно стабильнее на 400-600 символах, чем на письме целиком.
     all_chunks: list[str] = []
     doc_chunk_ranges: list[tuple[int, int]] = []
     all_placeholders = []
@@ -644,7 +714,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     1. NLLB перевод + валидация фильтрами (20 попыток, копим пары оригинал→перевод)
     2. Выгружаем NLLB, грузим vLLM — LLM-судья отбирает лучшие переводы
     """
-    global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3, NLLB_CHUNK_CHARS
+    global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3
 
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage3
@@ -652,7 +722,6 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         MAX_RETRIES = s.max_retries
         OVERSAMPLE_FACTOR = s.oversample_factor
         MIN_JUDGE_SCORE_STAGE3 = s.min_judge_score
-        NLLB_CHUNK_CHARS = s.get("nllb_chunk_chars", NLLB_CHUNK_CHARS)
         MODEL_NLLB = pipeline_cfg.gpu.nllb_model
         BATCH_SIZE = min(pipeline_cfg.gpu.nllb_batch_size, MAX_NLLB_BATCH_SIZE)
 
@@ -662,9 +731,6 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     print("=" * 60)
     print("ЭТАП 3: Обратный перевод (< 50 → 50)")
     print("=" * 60)
-    print(f"[Перевод] NLLB: {MODEL_NLLB}, batch={BATCH_SIZE}, "
-          f"max_batch={MAX_NLLB_BATCH_SIZE}, chunk_chars={NLLB_CHUNK_CHARS}, "
-          f"beams={TRANSLATION_NUM_BEAMS}")
 
     # ==========================================================
     # Определяем сценарий запуска:
@@ -737,13 +803,36 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
     if run_phase1:
         # ==========================================================
-        # Фаза 1: NLLB перевод + валидация фильтрами
+        # Фаза 1: перевод (NLLB или LLM-translator) + валидация фильтрами.
         # Копим ВСЕ пары (перевод, оригинал) что прошли фильтры —
-        # судья потом отберёт лучшие по рейтингу
+        # судья потом отберёт лучшие по рейтингу.
+        # Бэкенд переводчика выбирается по полю translator.backend в json-конфиге
+        # модели: "llm" → инструкционная LLM через vLLM (Rosetta и т.п.), иначе NLLB.
         # ==========================================================
 
-        model, tokenizer, device = load_translation_models()
-        sbert_model = load_sbert_for_stage3()
+        model_cfg_for_tr = load_model_config(config_path)
+        translator_cfg = model_cfg_for_tr.get("translator") or {}
+        backend = translator_cfg.get("backend")
+        use_llm_translator = backend == "llm"
+        use_llamacpp_translator = backend == "llama_cpp"
+
+        llm_tr = None
+        sbert_model = None
+        if use_llm_translator:
+            translator_model_name = translator_cfg.get("model_name", "")
+            translate_fn = None
+            model = tokenizer = device = None
+        elif use_llamacpp_translator:
+            llm_tr, gen_params_tr = load_llamacpp_translator(translator_cfg)
+            translate_fn = lambda srcs: back_translate_llamacpp(srcs, llm_tr, gen_params_tr)
+            model = tokenizer = device = None
+        else:
+            model, tokenizer, device = load_translation_models()
+            translate_fn = lambda srcs: back_translate(srcs, model, tokenizer, device)
+            llm_tr = None
+
+        if not use_llm_translator:
+            sbert_model = load_sbert_for_stage3()
 
         for attempt in range(1, MAX_RETRIES + 1):
             # перевод останавливается когда класс набрал 2x от нужного,
@@ -757,6 +846,14 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
             print(f"\n[Этап 3] Попытка {attempt}/{MAX_RETRIES}: "
                   f"{len(pending)} классов ещё набирают кандидатов")
+            attempt_temp = None
+            if use_llm_translator:
+                attempt_temp = get_translator_temperature_for_attempt(
+                    translator_cfg, attempt
+                )
+                print(f"  [Перевод/LLM] Попытка {attempt}: "
+                      f"temperature={attempt_temp}, "
+                      f"top_p={translator_cfg.get('top_p', 0.9)}")
 
             # собираем все оригиналы в один список — переводим одним прогоном
             all_sources: list[str] = []
@@ -771,14 +868,30 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
             print(f"  Всего источников для перевода: {len(all_sources)}")
 
-            # один большой RU→EN→RU прогон
-            all_translated = back_translate(all_sources, model, tokenizer, device)
+            # один большой RU→EN→RU прогон (NLLB или LLM-translator — зависит от конфига)
+            if use_llm_translator:
+                llm_tr, _ = load_llm_translator(translator_cfg, pipeline_cfg)
+                sp_tr = make_translator_sampling_params(
+                    translator_cfg, temperature=attempt_temp
+                )
+                all_translated = back_translate_llm(
+                    all_sources, llm_tr, sp_tr, translator_model_name
+                )
+                print("  [Перевод/LLM] Попытка завершена, выгружаю переводчик перед SBERT")
+                unload_vllm(llm_tr)
+                llm_tr = None
+                clear_validation_sbert()
+            else:
+                all_translated = translate_fn(all_sources)
 
             # разбиваем по классам, сохраняя пары (перевод, оригинал)
             pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
             for translated, source, cls_name in zip(all_translated, all_sources, source_class):
                 if translated.strip():
                     pairs_by_class[cls_name].append((translated.strip(), source))
+
+            if use_llm_translator:
+                sbert_model = load_sbert_for_stage3()
 
             # валидируем по классам, сохраняя связь перевод→оригинал
             for class_name, state in class_state.items():
@@ -800,11 +913,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 n_after_validation = len(valid)
 
                 # восстанавливаем пары для текстов что прошли фильтры
-                valid_set = set(valid)
-                valid_pairs = [
-                    (t, o) for t, o in zip(candidates, candidate_originals)
-                    if t in valid_set
-                ]
+                valid_pairs = restore_valid_pairs(candidates, candidate_originals, valid)
 
                 # берём всё что прошло фильтры — судья потом отберёт лучшие
                 state["accepted_pairs"].extend(valid_pairs)
@@ -826,15 +935,30 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 pd.DataFrame(cache_rows).to_csv(_PAIRS_CSV, index=False)
                 print(f"  [Кэш] Попытка {attempt}: сохранено {len(cache_rows)} пар")
 
-        # чистим GPU — NLLB и SBERT больше не нужны
-        print("\n[Этап 3] Фаза 1 завершена, выгружаем NLLB...")
-        unload_from_gpu(model, tokenizer, sbert_model)
-        model = tokenizer = sbert_model = None
-        import src.augmentation.validation as val_module
-        val_module._sbert_model = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+            if use_llm_translator:
+                print("  [Валидация] Попытка завершена, выгружаю SBERT")
+                unload_from_gpu(sbert_model)
+                sbert_model = None
+                clear_validation_sbert()
+
+        # чистим GPU — переводчик и SBERT больше не нужны
+        print("\n[Этап 3] Фаза 1 завершена, выгружаем переводчик...")
+        if use_llm_translator:
+            if llm_tr is not None:
+                unload_vllm(llm_tr)
+                llm_tr = None
+            if sbert_model is not None:
+                unload_from_gpu(sbert_model)
+                sbert_model = None
+        elif use_llamacpp_translator:
+            unload_llamacpp(llm_tr)
+            llm_tr = None
+            unload_from_gpu(sbert_model)
+            sbert_model = None
+        else:
+            unload_from_gpu(model, tokenizer, sbert_model)
+            model = tokenizer = sbert_model = None
+        clear_validation_sbert()
 
     # ==========================================================
     # Фаза 2: грузим vLLM — судья отбирает лучшие переводы
