@@ -19,6 +19,7 @@ import gc
 import json
 import random
 import argparse
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -513,6 +514,32 @@ def load_sbert_for_stage3():
     return sbert
 
 
+def restore_valid_pairs(
+    candidates: list[str],
+    originals: list[str],
+    valid_texts: list[str],
+) -> list[tuple[str, str]]:
+    """
+    Восстанавливает пары перевод→оригинал после validate_generated_texts().
+
+    Валидатор может удалять точные дубликаты и возвращать один экземпляр текста.
+    Поэтому нельзя делать `set(valid_texts)`: если NLLB сгенерировала 20 одинаковых
+    писем, set пропустит все 20 назад в кэш. Counter сохраняет ровно то количество
+    экземпляров, которое реально прошло фильтры.
+    """
+    remaining = Counter(t.strip() for t in valid_texts)
+    pairs: list[tuple[str, str]] = []
+
+    for translated, original in zip(candidates, originals):
+        key = translated.strip()
+        if remaining[key] <= 0:
+            continue
+        pairs.append((translated, original))
+        remaining[key] -= 1
+
+    return pairs
+
+
 def translate_batch(
     texts: list[str],
     model: AutoModelForSeq2SeqLM,
@@ -800,11 +827,11 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 n_after_validation = len(valid)
 
                 # восстанавливаем пары для текстов что прошли фильтры
-                valid_set = set(valid)
-                valid_pairs = [
-                    (t, o) for t, o in zip(candidates, candidate_originals)
-                    if t in valid_set
-                ]
+                valid_pairs = restore_valid_pairs(
+                    candidates,
+                    candidate_originals,
+                    valid,
+                )
 
                 # берём всё что прошло фильтры — судья потом отберёт лучшие
                 state["accepted_pairs"].extend(valid_pairs)
@@ -913,6 +940,18 @@ if __name__ == "__main__":
         required=True,
         help="Путь до JSON-конфига модели для LLM-судьи (например, configs/model_vllm.json)",
     )
+    parser.add_argument(
+        "--gpu",
+        type=str,
+        default=None,
+        help="GPU-профиль из config_models/pipeline_config.json, например A100_40",
+    )
     args = parser.parse_args()
 
-    run(args.config)
+    pipeline_cfg = None
+    if args.gpu:
+        from src.utils.pipeline_config import load_pipeline_config
+
+        pipeline_cfg = load_pipeline_config(args.gpu)
+
+    run(args.config, pipeline_cfg=pipeline_cfg)

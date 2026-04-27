@@ -288,6 +288,18 @@ if __name__ == "__main__":
         required=True,
         help="Путь до JSON-конфига модели (например, configs/model_vllm.json)",
     )
+    parser.add_argument(
+        "--gpu",
+        type=str,
+        default=None,
+        help="GPU-профиль из config_models/pipeline_config.json, например A100_40",
+    )
     args = parser.parse_args()
 
-    run(args.config)
+    pipeline_cfg = None
+    if args.gpu:
+        from src.utils.pipeline_config import load_pipeline_config
+
+        pipeline_cfg = load_pipeline_config(args.gpu)
+
+    run(args.config, pipeline_cfg=pipeline_cfg)
