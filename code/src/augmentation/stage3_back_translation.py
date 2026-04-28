@@ -91,6 +91,10 @@ def unmask_placeholders(text: str, placeholders: list[str]) -> str:
 TRANSLATEGEMMA_RU = "ru"
 TRANSLATEGEMMA_EN = "en"
 
+# Промежуточные языки для ротации: en→de→fr→en→...
+# ZH исключён — типологически далёк от русского, корпоративная терминология страдает
+INTERMEDIATE_LANGS = ["en", "de", "fr"]
+
 
 def get_translator_temperature_for_attempt(
     translator_cfg: dict,
@@ -236,8 +240,13 @@ def translate_batch_translategemma(
     return result
 
 
-def back_translate_translategemma(texts: list[str], llm, sampling_params) -> list[str]:
-    """Back-translates through TranslateGemma: RU -> EN -> RU."""
+def back_translate_translategemma(
+    texts: list[str],
+    llm,
+    sampling_params,
+    intermediate_lang: str = TRANSLATEGEMMA_EN,
+) -> list[str]:
+    """Back-translates through TranslateGemma: RU -> intermediate_lang -> RU."""
     masked_texts = []
     all_placeholders = []
     for text in texts:
@@ -250,13 +259,13 @@ def back_translate_translategemma(texts: list[str], llm, sampling_params) -> lis
         llm,
         sampling_params,
         TRANSLATEGEMMA_RU,
-        TRANSLATEGEMMA_EN,
+        intermediate_lang,
     )
     ru_texts = translate_batch_translategemma(
         [text or "" for text in en_texts],
         llm,
         sampling_params,
-        TRANSLATEGEMMA_EN,
+        intermediate_lang,
         TRANSLATEGEMMA_RU,
     )
 
@@ -633,13 +642,17 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             # Перевод
             if use_translategemma:
                 attempt_temp = get_translator_temperature_for_attempt(translator_cfg, attempt)
+                intermediate_lang = INTERMEDIATE_LANGS[(attempt - 1) % len(INTERMEDIATE_LANGS)]
                 print(f"  [Перевод/TranslateGemma] temperature={attempt_temp}, "
-                      f"top_p={translator_cfg.get('top_p', 0.9)}")
+                      f"top_p={translator_cfg.get('top_p', 0.9)}, "
+                      f"pivot={intermediate_lang}")
                 llm_tr = load_llm_translator(translator_cfg, pipeline_cfg)
                 sampling_params_tr = make_translator_sampling_params(
                     translator_cfg, temperature=attempt_temp,
                 )
-                all_translated = back_translate_translategemma(all_sources, llm_tr, sampling_params_tr)
+                all_translated = back_translate_translategemma(
+                    all_sources, llm_tr, sampling_params_tr, intermediate_lang,
+                )
                 unload_vllm(llm_tr)
                 llm_tr = None
                 sbert_model = load_sbert_on_gpu()
