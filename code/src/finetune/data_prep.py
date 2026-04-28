@@ -72,6 +72,29 @@ def compute_class_groups(orig_counts: dict, label2id: dict) -> dict[int, str]:
     return groups
 
 
+def compute_class_weights(df_train: pd.DataFrame, label2id: dict):
+    """
+    sklearn-balanced формула: w[c] = n_samples / (n_classes * count[c]).
+
+    Применяется к АУГМЕНТИРОВАННОМУ train (stage 3) — после аугментации
+    распределение более равномерное (15-50 примеров/класс), но всё ещё неравно.
+    Веса дополнительно подавляют доминирующие классы.
+
+    Возвращает np.ndarray длины n_classes, индекс — class_id.
+    """
+    from sklearn.utils.class_weight import compute_class_weight
+    import numpy as np
+
+    n_classes = len(label2id)
+    train_ids = df_train[LABEL_COL].map(label2id).astype(int).to_numpy()
+    weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.arange(n_classes),
+        y=train_ids,
+    )
+    return weights
+
+
 def encode_labels(df: pd.DataFrame, label2id: dict) -> pd.DataFrame:
     """Добавляет колонку label_id с числовыми id."""
     df = df.copy()

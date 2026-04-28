@@ -78,7 +78,7 @@ class SeqClsRunner:
     def prepare(self):
         from .data_prep import (
             load_finetune_data, build_label_mapping, compute_class_groups,
-            encode_labels, tokenize_dataset, get_collator,
+            compute_class_weights, encode_labels, tokenize_dataset, get_collator,
         )
         from .peft_utils import load_base_model, build_peft_config, wrap_with_peft
 
@@ -94,8 +94,37 @@ class SeqClsRunner:
 
         self.class_groups = compute_class_groups(orig_counts, self.label2id)
 
+        # Веса классов для CrossEntropy (по умолчанию ON, выключается в JSON)
+        self.use_class_weights = bool(self.cfg.get("use_class_weights", True))
+        if self.use_class_weights:
+            import torch
+            weights_np = compute_class_weights(df_train, self.label2id)
+            self.class_weights = torch.tensor(weights_np, dtype=torch.float32)
+            print(f"[ClassWeights] enabled. range=[{weights_np.min():.3f}, {weights_np.max():.3f}], "
+                  f"mean={weights_np.mean():.3f}")
+        else:
+            self.class_weights = None
+
         df_train = encode_labels(df_train, self.label2id)
         df_test = encode_labels(df_test, self.label2id)
+
+        # Чтобы test не участвовал в выборе чекпоинта (selection bias),
+        # отрезаем val из аугментированного train. Stratified — чтобы все 36 классов
+        # были в val. Доля val настраивается через JSON: "val_split": 0.10 (default 0.10).
+        from sklearn.model_selection import train_test_split
+        val_split = float(self.cfg.get("val_split", 0.10))
+        if val_split > 0:
+            df_train, df_val = train_test_split(
+                df_train,
+                test_size=val_split,
+                stratify=df_train["label_id"],
+                random_state=42,
+            )
+            print(f"[Split] train={len(df_train)} | val={len(df_val)} (val_split={val_split}) | "
+                  f"test={len(df_test)} (held out)")
+        else:
+            df_val = df_test
+            print(f"[Split] val_split=0 → используется df_test как val (legacy, имеет selection bias)")
 
         self.model, self.tokenizer = load_base_model(
             self.cfg, self.pipeline_cfg,
@@ -106,7 +135,7 @@ class SeqClsRunner:
 
         max_seq = int(self.cfg["max_seq_length"])
         self.train_ds = tokenize_dataset(df_train, self.tokenizer, max_seq)
-        self.eval_ds = tokenize_dataset(df_test, self.tokenizer, max_seq)
+        self.eval_ds = tokenize_dataset(df_val, self.tokenizer, max_seq)
         self.collator = get_collator(self.tokenizer)
 
         tp = self.cfg["training_params"]
@@ -123,6 +152,8 @@ class SeqClsRunner:
 
     def train(self):
         import numpy as np
+        import torch
+        import torch.nn as nn
         from sklearn.metrics import balanced_accuracy_score, f1_score
         from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
 
@@ -144,7 +175,30 @@ class SeqClsRunner:
                 "macro_f1": f1_score(labels, preds, average="macro", zero_division=0),
             }
 
-        trainer = Trainer(
+        class WeightedCETrainer(Trainer):
+            """Trainer с CrossEntropyLoss, взвешенной по классам.
+
+            Веса вычислены sklearn-balanced на train (см. data_prep.compute_class_weights).
+            Перемещаются на device логитов лениво — чтобы не падало при PEFT-загрузке
+            до того как модель окажется на GPU.
+            """
+            def __init__(self, *targs, class_weights=None, **tkwargs):
+                super().__init__(*targs, **tkwargs)
+                self._class_weights = class_weights
+
+            def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+                labels = inputs.pop("labels")
+                outputs = model(**inputs)
+                logits = outputs.logits
+                weight = None
+                if self._class_weights is not None:
+                    weight = self._class_weights.to(logits.device, dtype=logits.dtype)
+                loss_fct = nn.CrossEntropyLoss(weight=weight)
+                loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+                return (loss, outputs) if return_outputs else loss
+
+        trainer_cls = WeightedCETrainer if self.use_class_weights else Trainer
+        trainer_kwargs = dict(
             model=self.model,
             args=args,
             train_dataset=self.train_ds,
@@ -156,6 +210,9 @@ class SeqClsRunner:
                 early_stopping_patience=self.early_stopping_patience
             )],
         )
+        if self.use_class_weights:
+            trainer_kwargs["class_weights"] = self.class_weights
+        trainer = trainer_cls(**trainer_kwargs)
 
         t0 = time.time()
         trainer.train()
@@ -172,7 +229,14 @@ class SeqClsRunner:
             "run_key": self.run_key,
             "trainable_params": self.trainable_params,
             "train_time_sec": self.train_time_sec,
+            "use_class_weights": bool(self.use_class_weights),
         }
+        if self.use_class_weights and self.class_weights is not None:
+            meta["class_weights_stats"] = {
+                "min":  float(self.class_weights.min()),
+                "max":  float(self.class_weights.max()),
+                "mean": float(self.class_weights.mean()),
+            }
         with open(self.output_dir / "metadata.json", "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
