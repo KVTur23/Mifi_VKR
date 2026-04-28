@@ -56,8 +56,10 @@ MAX_LENGTH = 512
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
 
-# промежуточный csv для пар фазы 1 — при рестарте подхватываем и сразу в фазу 2
+# промежуточный csv для пар — при рестарте подхватываем и сразу судьёй
 _PAIRS_CSV = DATA_DIR / "_stage3_pairs_cache.csv"
+# чекпоинт текстов, прошедших судью — при рестарте пропускаем уже отобранные
+_JUDGED_CSV = DATA_DIR / "_stage3_judged_cache.csv"
 
 
 def mask_placeholders(text: str) -> tuple[str, list[str]]:
@@ -99,7 +101,7 @@ def get_translator_temperature_for_attempt(
     if schedule:
         idx = min(max(attempt - 1, 0), len(schedule) - 1)
         return float(schedule[idx])
-    return float(translator_cfg.get("temperature", 0.3))
+    return float(translator_cfg.get("temperature", 0.8))
 
 
 def make_translator_sampling_params(
@@ -111,7 +113,7 @@ def make_translator_sampling_params(
 
     return SamplingParams(
         temperature=(
-            float(translator_cfg.get("temperature", 0.3))
+            float(translator_cfg.get("temperature", 0.8))
             if temperature is None else float(temperature)
         ),
         top_p=float(translator_cfg.get("top_p", 0.9)),
@@ -413,13 +415,79 @@ def select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
     return sources
 
 
+def _run_judge_pass(
+    class_state: dict,
+    config_path: str,
+    pipeline_cfg,
+    min_score: float,
+) -> None:
+    """
+    Запускает судью на accepted_pairs для классов, которым ещё нужны тексты.
+    Отобранные тексты добавляются в judged_texts, accepted_pairs очищается.
+    Выгружает vLLM после завершения.
+    """
+    has_pairs = any(
+        s["accepted_pairs"] and len(s["judged_texts"]) < s["n_needed"]
+        for s in class_state.values()
+    )
+    if not has_pairs:
+        print("[Судья] Нет пар для оценки — пропускаем")
+        for s in class_state.values():
+            s["accepted_pairs"] = []
+        return
+
+    from src.augmentation.llm_utils import load_llm, select_top_paraphrases
+    llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
+
+    for class_name, state in class_state.items():
+        pairs = state["accepted_pairs"]
+        still_needed = state["n_needed"] - len(state["judged_texts"])
+
+        if not pairs or still_needed <= 0:
+            state["accepted_pairs"] = []
+            continue
+
+        paras = [p[0] for p in pairs]
+        origs = [p[1] for p in pairs]
+
+        print(f"\n[Этап 3] Класс «{class_name}»: {len(pairs)} кандидатов для судьи, "
+              f"нужно ещё {still_needed}")
+
+        best = select_top_paraphrases(
+            paras, origs, class_name, llm,
+            n_needed=still_needed, min_score=min_score,
+        )
+        state["judged_texts"].extend(best)
+        state["accepted_pairs"] = []
+
+        total_judged = len(state["judged_texts"])
+        print(f"[Этап 3] Класс «{class_name}»: судья отобрал {len(best)}, "
+              f"итого принято {total_judged}/{state['n_needed']}")
+        if total_judged < state["n_needed"]:
+            print(f"  [Внимание] «{class_name}»: ещё нужно {state['n_needed'] - total_judged}")
+
+    unload_vllm(llm)
+
+
+def _save_judged_cache(class_state: dict) -> None:
+    """Сохраняет тексты, прошедшие судью, в CSV — чекпоинт для возможного рестарта."""
+    rows = []
+    for cn, st in class_state.items():
+        for text in st["judged_texts"]:
+            rows.append({LABEL_COL: cn, TEXT_COL: text})
+    if rows:
+        pd.DataFrame(rows).to_csv(_JUDGED_CSV, index=False)
+        print(f"  [Чекпоинт судьи] Сохранено {len(rows)} текстов → {_JUDGED_CSV.name}")
+
+
 def run(config_path: str, pipeline_cfg=None) -> None:
     """
     Основная функция этапа 3.
 
-    Две фазы:
-    1. NLLB перевод + валидация фильтрами (20 попыток, копим пары оригинал→перевод)
-    2. Выгружаем NLLB, грузим vLLM — LLM-судья отбирает лучшие переводы
+    Судья запускается сразу после каждой попытки валидации — не ждём накопления всего пула.
+    При рестарте:
+      - _JUDGED_CSV: тексты уже прошедшие судью — восстанавливаем без повторной оценки
+      - _PAIRS_CSV:  пары ожидающие судью — запускаем судью немедленно
     """
     global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3
 
@@ -438,14 +506,6 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     print("=" * 60)
     print("ЭТАП 3: Обратный перевод (< 50 → 50)")
     print("=" * 60)
-
-    # ==========================================================
-    # Определяем сценарий запуска:
-    # 1) stage3.csv есть, все ≥ 50       → пропуск
-    # 2) stage3.csv есть, часть < 50     → перевод + судья для оставшихся
-    # 3) stage3.csv нет, кэш пар есть   → судья для всех
-    # 4) stage3.csv нет, кэша нет       → полный прогон
-    # ==========================================================
 
     stage3_file = DATA_DIR / STAGE_FILES[STAGE]
     has_stage3 = stage3_file.exists()
@@ -470,37 +530,65 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
         print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
-    # состояние по классам: что есть, сколько нужно, что накопили
     class_state = {}
     for class_name, current_count in classes_to_augment.items():
         class_state[class_name] = {
             "existing": df[df[LABEL_COL] == class_name][TEXT_COL].tolist(),
             "n_needed": TARGET_COUNT - current_count,
-            "accepted_pairs": [],  # (перевод, оригинал) — для судьи потом
+            "accepted_pairs": [],  # (перевод, оригинал) — кандидаты текущей попытки
+            "judged_texts": [],    # тексты, отобранные судьёй
         }
 
     # ==========================================================
-    # Проверяем кэш пар фазы 1 — если есть, пропускаем перевод
-    # (только если stage3.csv нет — иначе кэш не актуален)
+    # Загружаем чекпоинты при рестарте (только если нет stage3.csv)
     # ==========================================================
 
-    if not has_stage3 and _PAIRS_CSV.exists():
-        print(f"\n[Этап 3] Найден кэш пар фазы 1: {_PAIRS_CSV.name}, загружаю...")
-        pairs_df = pd.read_csv(_PAIRS_CSV)
-        for _, row in pairs_df.iterrows():
-            cn = row[LABEL_COL]
-            if cn in class_state:
-                class_state[cn]["accepted_pairs"].append(
-                    (row["translated"], row["original"])
-                )
-        for cn, st in class_state.items():
-            print(f"  «{cn}»: {len(st['accepted_pairs'])} пар в кэше")
-        print("[Этап 3] Фаза 1 пропущена — пары загружены из кэша")
+    if not has_stage3:
+        if _JUDGED_CSV.exists():
+            print(f"\n[Этап 3] Загружаю чекпоинт судьи: {_JUDGED_CSV.name}...")
+            judged_df = pd.read_csv(_JUDGED_CSV)
+            for _, row in judged_df.iterrows():
+                cn = row[LABEL_COL]
+                if cn in class_state:
+                    class_state[cn]["judged_texts"].append(row[TEXT_COL])
+            for cn, st in class_state.items():
+                if st["judged_texts"]:
+                    print(f"  «{cn}»: восстановлено {len(st['judged_texts'])} текстов из чекпоинта")
+
+        if _PAIRS_CSV.exists():
+            print(f"\n[Этап 3] Найден кэш пар: {_PAIRS_CSV.name} — запускаю судью сразу...")
+            pairs_df = pd.read_csv(_PAIRS_CSV)
+            loaded_any = False
+            for _, row in pairs_df.iterrows():
+                cn = row[LABEL_COL]
+                if cn in class_state:
+                    st = class_state[cn]
+                    if len(st["judged_texts"]) < st["n_needed"]:
+                        st["accepted_pairs"].append((row["translated"], row["original"]))
+                        loaded_any = True
+            if loaded_any:
+                for cn, st in class_state.items():
+                    if st["accepted_pairs"]:
+                        print(f"  «{cn}»: {len(st['accepted_pairs'])} пар для немедленной оценки")
+                _run_judge_pass(class_state, config_path, pipeline_cfg, MIN_JUDGE_SCORE_STAGE3)
+                _save_judged_cache(class_state)
+            _PAIRS_CSV.unlink(missing_ok=True)
+            print(f"[Этап 3] Кэш пар обработан и удалён")
+
+    # ==========================================================
+    # Проверяем, нужна ли фаза перевода
+    # ==========================================================
+
+    needs_translation = any(
+        len(st["judged_texts"]) < st["n_needed"]
+        for st in class_state.values()
+    )
+
+    if not needs_translation:
+        print("[Этап 3] Все классы набрали нужное количество из кэша — перевод пропущен")
     else:
         # ==========================================================
-        # Фаза 1: NLLB перевод + валидация фильтрами
-        # Копим ВСЕ пары (перевод, оригинал) что прошли фильтры —
-        # судья потом отберёт лучшие по рейтингу
+        # Фаза перевода: перевод + валидация + судья после каждой попытки
         # ==========================================================
 
         model_cfg_for_translation = load_model_config(config_path)
@@ -511,178 +599,134 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         )
 
         if use_translategemma:
-            print("[Этап 3] Фаза 1: переводчик TranslateGemma включён из конфига")
-            model = tokenizer = device = None
-            sbert_model = None
+            print("[Этап 3] Переводчик: TranslateGemma (vLLM)")
+            model = tokenizer = device = sbert_model = None
         else:
+            print("[Этап 3] Переводчик: NLLB-200 (HuggingFace)")
             model, tokenizer, device = load_translation_models()
             sbert_model = load_sbert_on_gpu()
 
         for attempt in range(1, MAX_RETRIES + 1):
-            # перевод останавливается когда класс набрал 2x от нужного,
-            # но всё что прошло фильтры сверху — тоже в пул, судья разберётся
             pending = {
                 name: state for name, state in class_state.items()
-                if len(state["accepted_pairs"]) < state["n_needed"] * 2
+                if len(state["judged_texts"]) < state["n_needed"]
             }
             if not pending:
                 break
 
             print(f"\n[Этап 3] Попытка {attempt}/{MAX_RETRIES}: "
-                  f"{len(pending)} классов ещё набирают кандидатов")
+                  f"{len(pending)} классов ещё набирают тексты")
 
-            # собираем все оригиналы в один список — переводим одним прогоном
+            # Собираем источники для перевода
             all_sources: list[str] = []
             source_class: list[str] = []
 
             for class_name, state in pending.items():
-                pool_gap = state["n_needed"] * 2 - len(state["accepted_pairs"])
-                n_to_generate = max(pool_gap, 1) * OVERSAMPLE_FACTOR
+                still_needed = state["n_needed"] - len(state["judged_texts"])
+                n_to_generate = max(still_needed, 1) * OVERSAMPLE_FACTOR
                 sources = select_sources(state["existing"], n_to_generate)
                 all_sources.extend(sources)
                 source_class.extend([class_name] * len(sources))
 
             print(f"  Всего источников для перевода: {len(all_sources)}")
 
-            # один большой RU→EN→RU прогон
+            # Перевод
             if use_translategemma:
-                attempt_temp = get_translator_temperature_for_attempt(
-                    translator_cfg, attempt
-                )
-                print(f"  [Перевод/TranslateGemma] Попытка {attempt}: "
-                      f"temperature={attempt_temp}, "
+                attempt_temp = get_translator_temperature_for_attempt(translator_cfg, attempt)
+                print(f"  [Перевод/TranslateGemma] temperature={attempt_temp}, "
                       f"top_p={translator_cfg.get('top_p', 0.9)}")
                 llm_tr = load_llm_translator(translator_cfg, pipeline_cfg)
                 sampling_params_tr = make_translator_sampling_params(
-                    translator_cfg,
-                    temperature=attempt_temp,
+                    translator_cfg, temperature=attempt_temp,
                 )
-                all_translated = back_translate_translategemma(
-                    all_sources,
-                    llm_tr,
-                    sampling_params_tr,
-                )
+                all_translated = back_translate_translategemma(all_sources, llm_tr, sampling_params_tr)
                 unload_vllm(llm_tr)
                 llm_tr = None
                 sbert_model = load_sbert_on_gpu()
             else:
                 all_translated = back_translate(all_sources, model, tokenizer, device)
 
-            # разбиваем по классам, сохраняя пары (перевод, оригинал)
+            # Разбиваем по классам и валидируем
             pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
             for translated, source, cls_name in zip(all_translated, all_sources, source_class):
                 if translated.strip():
                     pairs_by_class[cls_name].append((translated.strip(), source))
 
-            # валидируем по классам, сохраняя связь перевод→оригинал
             for class_name, state in class_state.items():
                 if class_name not in pending:
                     continue
-
                 pairs = pairs_by_class.get(class_name, [])
                 if not pairs:
                     continue
-
                 candidates = [p[0] for p in pairs]
                 candidate_originals = [p[1] for p in pairs]
-
-                current_existing = state["existing"] + [p[0] for p in state["accepted_pairs"]]
+                # judged_texts уже в existing для дедупликации
+                current_existing = state["existing"] + state["judged_texts"]
                 valid = validate_generated_texts(
                     candidates, current_existing, class_name,
                     sbert_model=sbert_model,
                 )
                 n_after_validation = len(valid)
-
-                # восстанавливаем пары для текстов что прошли фильтры
                 valid_set = set(valid)
                 valid_pairs = [
                     (t, o) for t, o in zip(candidates, candidate_originals)
                     if t in valid_set
                 ]
-
-                # берём всё что прошло фильтры — судья потом отберёт лучшие
                 state["accepted_pairs"].extend(valid_pairs)
-
                 print(f"  [{attempt}] «{class_name}»: получено {len(candidates)}, "
                       f"после фильтров {n_after_validation}, "
-                      f"в пул +{len(valid_pairs)}, всего в пуле {len(state['accepted_pairs'])}")
+                      f"в пул +{len(valid_pairs)} (итого в пуле {len(state['accepted_pairs'])})")
 
-            # сохраняем пары в промежуточный csv — при рестарте подхватим
-            cache_rows = []
-            for cn, st in class_state.items():
-                for translated, original in st["accepted_pairs"]:
-                    cache_rows.append({
-                        LABEL_COL: cn,
-                        "translated": translated,
-                        "original": original,
-                    })
-            if cache_rows:
-                pd.DataFrame(cache_rows).to_csv(_PAIRS_CSV, index=False)
-                print(f"  [Кэш] Попытка {attempt}: сохранено {len(cache_rows)} пар")
-
+            # Выгружаем SBERT перед судьёй
             if use_translategemma:
                 unload_from_gpu(sbert_model)
                 sbert_model = None
                 import src.augmentation.validation as val_module
                 val_module._sbert_model = None
+            else:
+                # NLLB: выгружаем переводчик и SBERT перед судьёй
+                unload_from_gpu(model, tokenizer, sbert_model)
+                model = tokenizer = sbert_model = None
+                import src.augmentation.validation as val_module
+                val_module._sbert_model = None
 
-        # чистим GPU — переводчик и SBERT больше не нужны
-        print("\n[Этап 3] Фаза 1 завершена, выгружаем переводчик...")
-        if use_translategemma:
-            if sbert_model is not None:
-                unload_from_gpu(sbert_model)
-        else:
+            # Запускаем судью сразу после валидации этой попытки
+            _run_judge_pass(class_state, config_path, pipeline_cfg, MIN_JUDGE_SCORE_STAGE3)
+            _save_judged_cache(class_state)
+
+            # NLLB: перезагружаем переводчик если нужны ещё попытки
+            if not use_translategemma:
+                still_pending = any(
+                    len(s["judged_texts"]) < s["n_needed"]
+                    for s in class_state.values()
+                )
+                if still_pending and attempt < MAX_RETRIES:
+                    model, tokenizer, device = load_translation_models()
+                    sbert_model = load_sbert_on_gpu()
+
+        print("\n[Этап 3] Перевод завершён")
+        # NLLB: финальная выгрузка (если ещё загружена)
+        if not use_translategemma and model is not None:
             unload_from_gpu(model, tokenizer, sbert_model)
-        model = tokenizer = sbert_model = None
-        import src.augmentation.validation as val_module
-        val_module._sbert_model = None
+            model = tokenizer = sbert_model = None
+            import src.augmentation.validation as val_module
+            val_module._sbert_model = None
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
     # ==========================================================
-    # Фаза 2: грузим vLLM — судья отбирает лучшие переводы
+    # Финальное сохранение
     # ==========================================================
 
-    print("\n[Этап 3] Фаза 2: грузим LLM-судью...")
-
-    from src.augmentation.llm_utils import load_llm, select_top_paraphrases
-    llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
-
-    # судья оценивает каждый перевод рядом с его оригиналом
     new_rows = []
-
     for class_name, state in class_state.items():
-        pairs = state["accepted_pairs"]
-        n_needed = state["n_needed"]
-
-        if not pairs:
-            print(f"[Этап 3] Класс «{class_name}»: нет кандидатов после перевода")
-            continue
-
-        paras = [p[0] for p in pairs]
-        origs = [p[1] for p in pairs]
-
-        print(f"\n[Этап 3] Класс «{class_name}»: {len(pairs)} кандидатов в пуле, "
-              f"нужно {n_needed}")
-
-        # судья сравнивает каждый перевод с его оригиналом
-        # порог ниже чем у парафраза (2.5 vs 5.0) — обратный перевод неизбежно теряет качество
-        best = select_top_paraphrases(
-            paras, origs, class_name, llm,
-            n_needed=n_needed, min_score=MIN_JUDGE_SCORE_STAGE3,
-        )
-
-        for text in best:
+        texts = state["judged_texts"][:state["n_needed"]]
+        for text in texts:
             new_rows.append({TEXT_COL: text, LABEL_COL: class_name})
+        if len(texts) < state["n_needed"]:
+            print(f"  [Внимание] «{class_name}»: отобрано только {len(texts)}/{state['n_needed']}")
 
-        print(f"[Этап 3] Класс «{class_name}»: отобрано {len(best)} текстов")
-
-        if len(best) < n_needed:
-            print(f"  [Внимание] «{class_name}»: удалось отобрать только "
-                  f"{len(best)}/{n_needed}")
-
-    # финальное сохранение
     if new_rows:
         new_df = pd.DataFrame(new_rows)
         df = pd.concat([df, new_df], ignore_index=True)
@@ -692,11 +736,12 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
     save_checkpoint(df, stage=STAGE)
 
-    # кэш пар больше не нужен — переименовываем на всякий случай
-    if _PAIRS_CSV.exists():
-        backup = _PAIRS_CSV.with_suffix(".bak.csv")
-        _PAIRS_CSV.rename(backup)
-        print(f"[Этап 3] Кэш пар фазы 1 переименован → {backup.name}")
+    # Убираем чекпоинты — переименовываем на всякий случай
+    for path in [_PAIRS_CSV, _JUDGED_CSV]:
+        if path.exists():
+            backup = path.with_suffix(".bak.csv")
+            path.rename(backup)
+            print(f"[Этап 3] {path.name} → {backup.name}")
 
     print(f"\n[Этап 3] Итоговое распределение:")
     dist = get_class_distribution(df)
