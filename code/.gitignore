@@ -1,0 +1,15 @@
+# Токен HuggingFace — никогда не коммитить
+secrets.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (большие файлы)
+Data/*.csv
+Data/*.bak.csv
