@@ -30,13 +30,15 @@ RESULTS_COLUMNS = [
 
 def load_finetuned_model(adapter_dir: str, base_model_name: str,
                          quantization_cfg: dict | None,
-                         num_labels: int, id2label: dict, label2id: dict):
+                         num_labels: int, id2label: dict, label2id: dict,
+                         pipeline_cfg=None):
     """
     Грузит базовую модель (опционально 4bit) и поверх неё PEFT-адаптер.
     """
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
     from peft import PeftModel
+    from src.finetune.peft_utils import _prepare_cuda_for_large_load, _quantized_load_controls
 
     load_kwargs = {
         "num_labels": num_labels,
@@ -45,14 +47,20 @@ def load_finetuned_model(adapter_dir: str, base_model_name: str,
     }
 
     if quantization_cfg:
+        _prepare_cuda_for_large_load(torch)
         from transformers import BitsAndBytesConfig
         compute_dtype = getattr(torch, quantization_cfg.get("bnb_4bit_compute_dtype", "bfloat16"))
-        load_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=quantization_cfg.get("load_in_4bit", True),
-            bnb_4bit_quant_type=quantization_cfg.get("bnb_4bit_quant_type", "nf4"),
-            bnb_4bit_compute_dtype=compute_dtype,
-            bnb_4bit_use_double_quant=quantization_cfg.get("bnb_4bit_use_double_quant", True),
-        )
+        bnb_kwargs = {
+            "load_in_4bit": quantization_cfg.get("load_in_4bit", True),
+            "bnb_4bit_quant_type": quantization_cfg.get("bnb_4bit_quant_type", "nf4"),
+            "bnb_4bit_compute_dtype": compute_dtype,
+            "bnb_4bit_use_double_quant": quantization_cfg.get("bnb_4bit_use_double_quant", True),
+        }
+        if quantization_cfg.get("bnb_4bit_quant_storage"):
+            bnb_kwargs["bnb_4bit_quant_storage"] = getattr(torch, quantization_cfg["bnb_4bit_quant_storage"])
+        load_kwargs["quantization_config"] = BitsAndBytesConfig(**bnb_kwargs)
+        load_kwargs["device_map"] = "auto"
+        load_kwargs.update(_quantized_load_controls(pipeline_cfg))
 
     tokenizer = AutoTokenizer.from_pretrained(adapter_dir)
     tokenizer.padding_side = "left"
@@ -167,6 +175,7 @@ def evaluate(adapter_dir: str, config_path: str, pipeline_cfg,
             num_labels=num_labels,
             id2label=id2label,
             label2id=label2id,
+            pipeline_cfg=pipeline_cfg,
         )
     model.eval()
 
