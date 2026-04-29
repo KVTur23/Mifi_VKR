@@ -14,6 +14,10 @@ orchestrator.py — Общее ядро запуска файнтюна
 - Обновление results/all_methods_comparison.csv блоком `finetune`.
 """
 
+import os
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch  # ранний импорт: лечит circular import torch.fx на py3.13 + torch 2.10
 import torch.fx  # noqa: F401
 
@@ -186,6 +190,7 @@ def run_finetune(methods: list[str] | None = None,
         print("#" * 60)
 
         try:
+            _gpu_cleanup()
             from importlib import import_module
             mod = import_module(f"src.finetune.run_{method}")
             mod.run(config_path=str(config_path), pipeline_cfg=pipeline_cfg)
