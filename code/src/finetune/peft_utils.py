@@ -39,7 +39,12 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
     }
 
     qcfg = cfg.get("quantization")
+    tp = cfg.get("training_params", {})
+
     if qcfg:
+        # QLoRA: bnb сам управляет dtype через bnb_4bit_compute_dtype.
+        # НЕ передаём torch_dtype — иначе веса грузятся в bf16 на GPU перед
+        # квантизацией, пиковое потребление 2× (для 32B на L4 = OOM).
         from transformers import BitsAndBytesConfig
         compute_dtype_str = qcfg.get("bnb_4bit_compute_dtype", "bfloat16")
         compute_dtype = getattr(torch, compute_dtype_str)
@@ -50,12 +55,13 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
             bnb_4bit_use_double_quant=qcfg.get("bnb_4bit_use_double_quant", True),
         )
         load_kwargs["quantization_config"] = bnb
-
-    tp = cfg.get("training_params", {})
-    if tp.get("bf16"):
-        load_kwargs["torch_dtype"] = torch.bfloat16
-    elif tp.get("fp16"):
-        load_kwargs["torch_dtype"] = torch.float16
+        load_kwargs["device_map"] = "auto"  # пошаговая загрузка по слоям, без пика
+    else:
+        # bf16/fp16 для нерубленых LoRA-моделей
+        if tp.get("bf16"):
+            load_kwargs["torch_dtype"] = torch.bfloat16
+        elif tp.get("fp16"):
+            load_kwargs["torch_dtype"] = torch.float16
 
     model = AutoModelForSequenceClassification.from_pretrained(model_name, **load_kwargs)
     model.config.pad_token_id = tokenizer.pad_token_id
