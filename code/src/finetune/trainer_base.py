@@ -74,6 +74,7 @@ class SeqClsRunner:
         self.class_groups = None
         self.trainable_params = None
         self.train_time_sec = None
+        self.df_test = None  # сохраняется в prepare() для опционального TestEvalCallback
 
     def prepare(self):
         from .data_prep import (
@@ -107,6 +108,11 @@ class SeqClsRunner:
 
         df_train = encode_labels(df_train, self.label2id)
         df_test = encode_labels(df_test, self.label2id)
+
+        # Сохраняем df_test для опционального TestEvalCallback (per-epoch test eval).
+        # Тестовый сет НЕ участвует ни в обучении, ни в выборе чекпоинта,
+        # callback пишет метрики только в test_curve.csv для диагностики.
+        self.df_test = df_test
 
         # Чтобы test не участвовал в выборе чекпоинта (selection bias),
         # отрезаем val из аугментированного train. Stratified — чтобы все 36 классов
@@ -155,11 +161,12 @@ class SeqClsRunner:
         import torch
         import torch.nn as nn
         import torch.nn.functional as F
+        import pandas as pd
         from sklearn.metrics import balanced_accuracy_score, f1_score
-        from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
+        from transformers import Trainer, TrainingArguments, EarlyStoppingCallback, TrainerCallback
 
         from .peft_utils import save_adapter
-        from .data_prep import class_groups_to_array
+        from .data_prep import class_groups_to_array, TEXT_COL, LABEL_COL
 
         tp = dict(self.cfg["training_params"])
         # Для PEFT-результата нужен адаптер, а не optimizer.pt/scheduler.pt.
@@ -200,6 +207,81 @@ class SeqClsRunner:
             print(f"[Loss] Focal (gamma={focal_gamma})")
         else:
             print(f"[Loss] CrossEntropy")
+
+        # ===== Per-epoch test eval callback =====
+        eval_test_each_epoch = bool(self.cfg.get("eval_test_each_epoch", False))
+
+        class TestEvalCallback(TrainerCallback):
+            """После каждой эпохи прогоняет test и пишет метрики в test_curve.csv.
+
+            НЕ влияет на выбор best checkpoint — `metric_for_best_model` остаётся
+            `eval_macro_f1` (val). Эта callback нужна только для диагностики:
+            видеть реальную test-кривую по эпохам и понимать, где настоящий пик.
+
+            Стоимость: ~2-3 мин на эпоху (test ≈ 341 пример).
+            """
+            def __init__(self, df_test, label2id, class_groups,
+                         output_path, max_seq_length, batch_size):
+                super().__init__()
+                self.df_test = df_test
+                self.label2id = label2id
+                self.class_groups = class_groups
+                self.output_path = output_path
+                self.max_seq_length = max_seq_length
+                self.batch_size = batch_size
+                self.history = []
+
+            def on_epoch_end(self, args, state, control, **kwargs):
+                from .evaluate_finetuned import predict, _f1_per_group
+
+                model = kwargs.get("model")
+                tokenizer = kwargs.get("processing_class") or kwargs.get("tokenizer")
+                if model is None or tokenizer is None:
+                    return
+
+                was_training = model.training
+                model.eval()
+                try:
+                    texts = self.df_test[TEXT_COL].tolist()
+                    y_pred = predict(
+                        model, tokenizer, texts,
+                        batch_size=self.batch_size,
+                        max_seq_length=self.max_seq_length,
+                    )
+                    y_true = self.df_test["label_id"].astype(int).to_numpy()
+
+                    bal_acc = balanced_accuracy_score(y_true, y_pred)
+                    macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+                    per_group = _f1_per_group(y_true, y_pred, self.class_groups)
+
+                    entry = {
+                        "epoch": float(state.epoch),
+                        "global_step": int(state.global_step),
+                        "test_balanced_accuracy": bal_acc,
+                        "test_macro_f1": macro_f1,
+                        "test_f1_group_A": per_group["f1_group_A"],
+                        "test_f1_group_B": per_group["f1_group_B"],
+                        "test_f1_group_C": per_group["f1_group_C"],
+                    }
+                    self.history.append(entry)
+
+                    pd.DataFrame(self.history).to_csv(self.output_path, index=False)
+
+                    def _fmt(v):
+                        return f"{v:.4f}" if v is not None else "—"
+
+                    print(f"[TestEval] E{state.epoch:.1f}: "
+                          f"bal_acc={bal_acc:.4f}, macro_f1={macro_f1:.4f}, "
+                          f"f1_A={_fmt(per_group['f1_group_A'])}, "
+                          f"f1_B={_fmt(per_group['f1_group_B'])}, "
+                          f"f1_C={_fmt(per_group['f1_group_C'])}")
+                finally:
+                    if was_training:
+                        model.train()
+
+        if eval_test_each_epoch:
+            print(f"[TestEval] enabled — добавляет ~2-3 мин на эпоху, "
+                  f"пишет в {self.output_dir}/test_curve.csv")
 
         class ConfigurableLossTrainer(Trainer):
             """Trainer с настраиваемым лоссом:
@@ -277,6 +359,22 @@ class SeqClsRunner:
 
                 return (loss, outputs) if return_outputs else loss
 
+        # Сборка callbacks
+        callbacks = [
+            EarlyStoppingCallback(
+                early_stopping_patience=self.early_stopping_patience
+            ),
+        ]
+        if eval_test_each_epoch and self.df_test is not None:
+            callbacks.append(TestEvalCallback(
+                df_test=self.df_test,
+                label2id=self.label2id,
+                class_groups=self.class_groups,
+                output_path=self.output_dir / "test_curve.csv",
+                max_seq_length=int(self.cfg["max_seq_length"]),
+                batch_size=max(1, int(tp.get("per_device_eval_batch_size", 4))),
+            ))
+
         # Решаем, нужен ли кастомный Trainer.
         # Если ничего из новых опций не включено и class_weights выкл — стандартный.
         needs_custom = (
@@ -294,9 +392,7 @@ class SeqClsRunner:
                 processing_class=self.tokenizer,
                 data_collator=self.collator,
                 compute_metrics=compute_metrics,
-                callbacks=[EarlyStoppingCallback(
-                    early_stopping_patience=self.early_stopping_patience
-                )],
+                callbacks=callbacks,
                 loss_type=loss_type,
                 focal_gamma=focal_gamma,
                 class_weights=self.class_weights if self.use_class_weights else None,
@@ -313,9 +409,7 @@ class SeqClsRunner:
                 processing_class=self.tokenizer,
                 data_collator=self.collator,
                 compute_metrics=compute_metrics,
-                callbacks=[EarlyStoppingCallback(
-                    early_stopping_patience=self.early_stopping_patience
-                )],
+                callbacks=callbacks,
             )
 
         t0 = time.time()
@@ -353,6 +447,7 @@ class SeqClsRunner:
             "focal_gamma": focal_gamma if loss_type == "focal" else None,
             "use_hierarchy": use_hierarchy,
             "hierarchy_lambda": hierarchy_lambda if use_hierarchy else None,
+            "eval_test_each_epoch": eval_test_each_epoch,
             "recovered_from_checkpoint_save_error": recovered_from_save_error,
         }
         if self.use_class_weights and self.class_weights is not None:
