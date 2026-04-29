@@ -160,6 +160,10 @@ class SeqClsRunner:
         from .peft_utils import save_adapter
 
         tp = dict(self.cfg["training_params"])
+        # Для PEFT-результата нужен адаптер, а не optimizer.pt/scheduler.pt.
+        # На Colab/Drive optimizer checkpoint для 32B легко бьётся с
+        # `inline_container.cc unexpected pos` из-за квоты/iostream errors.
+        tp.setdefault("save_only_model", True)
 
         args = TrainingArguments(
             output_dir=str(self.output_dir),
@@ -215,8 +219,23 @@ class SeqClsRunner:
         trainer = trainer_cls(**trainer_kwargs)
 
         t0 = time.time()
-        trainer.train()
-        self.train_time_sec = float(time.time() - t0)
+        recovered_from_save_error = False
+        try:
+            trainer.train()
+        except RuntimeError as e:
+            msg = str(e)
+            is_checkpoint_io_error = (
+                "inline_container.cc" in msg
+                or "iostream error" in msg
+                or "unexpected pos" in msg
+            )
+            if not is_checkpoint_io_error:
+                raise
+            recovered_from_save_error = True
+            print("[CheckpointSaveError] Trainer упал на записи checkpoint-а. "
+                  "Сохраняю текущий PEFT-адаптер из памяти и продолжаю eval.")
+        finally:
+            self.train_time_sec = float(time.time() - t0)
 
         save_adapter(
             self.model, str(self.output_dir), self.tokenizer,
@@ -230,6 +249,7 @@ class SeqClsRunner:
             "trainable_params": self.trainable_params,
             "train_time_sec": self.train_time_sec,
             "use_class_weights": bool(self.use_class_weights),
+            "recovered_from_checkpoint_save_error": recovered_from_save_error,
         }
         if self.use_class_weights and self.class_weights is not None:
             meta["class_weights_stats"] = {
