@@ -7,6 +7,7 @@ peft_utils.py — Загрузка базовой модели и примене
 
 import json
 import gc
+import os
 from pathlib import Path
 
 
@@ -29,6 +30,7 @@ def _profile_vram_gb(pipeline_cfg) -> int | None:
 
 def _prepare_cuda_for_large_load(torch):
     """Минимизирует пик VRAM перед загрузкой большой quantized-модели."""
+    os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -108,7 +110,7 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
         load_kwargs["device_map"] = "auto"  # пошаговая загрузка по слоям, без пика
         load_kwargs.update(_quantized_load_controls(pipeline_cfg))
         print(f"[ModelLoad] 4bit QLoRA: device_map=auto, max_memory={load_kwargs.get('max_memory')}, "
-              "loader_workers=1")
+              "async_load=off")
     else:
         # bf16/fp16 для нерубленых LoRA-моделей
         if tp.get("bf16"):
