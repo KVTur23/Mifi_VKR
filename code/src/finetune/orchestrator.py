@@ -17,6 +17,7 @@ orchestrator.py — Общее ядро запуска файнтюна
 import os
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+os.environ.setdefault("HF_DEACTIVATE_ASYNC_LOAD", "1")
 
 import torch  # ранний импорт: лечит circular import torch.fx на py3.13 + torch 2.10
 import torch.fx  # noqa: F401
