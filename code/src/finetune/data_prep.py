@@ -72,6 +72,25 @@ def compute_class_groups(orig_counts: dict, label2id: dict) -> dict[int, str]:
     return groups
 
 
+# Маппинг группа → int (для hierarchy-регуляризатора)
+GROUP_TO_INT = {"A": 0, "B": 1, "C": 2}
+
+
+def class_groups_to_array(class_groups: dict[int, str]):
+    """{0: 'A', 1: 'B', 2: 'C', ...} → np.ndarray([0, 1, 2, ...]).
+
+    Индекс — class_id, значение — int (0/1/2 = A/B/C). Используется в
+    hierarchy-регуляризаторе loss-а, чтобы быстро маскировать классы из
+    другой группы внутри батча.
+    """
+    import numpy as np
+    n = max(class_groups.keys()) + 1
+    arr = np.zeros(n, dtype=np.int64)
+    for cid, g in class_groups.items():
+        arr[cid] = GROUP_TO_INT[g]
+    return arr
+
+
 def compute_class_weights(df_train: pd.DataFrame, label2id: dict):
     """
     sklearn-balanced формула: w[c] = n_samples / (n_classes * count[c]).

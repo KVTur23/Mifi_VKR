@@ -154,10 +154,12 @@ class SeqClsRunner:
         import numpy as np
         import torch
         import torch.nn as nn
+        import torch.nn.functional as F
         from sklearn.metrics import balanced_accuracy_score, f1_score
         from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
 
         from .peft_utils import save_adapter
+        from .data_prep import class_groups_to_array
 
         tp = dict(self.cfg["training_params"])
         # Для PEFT-результата нужен адаптер, а не optimizer.pt/scheduler.pt.
@@ -179,44 +181,142 @@ class SeqClsRunner:
                 "macro_f1": f1_score(labels, preds, average="macro", zero_division=0),
             }
 
-        class WeightedCETrainer(Trainer):
-            """Trainer с CrossEntropyLoss, взвешенной по классам.
+        # ===== Новые конфигурируемые лоссы =====
+        loss_type = str(self.cfg.get("loss", "ce")).lower()  # "ce" | "focal"
+        focal_gamma = float(self.cfg.get("focal_gamma", 2.0))
+        use_hierarchy = bool(self.cfg.get("use_hierarchy", False))
+        hierarchy_lambda = float(self.cfg.get("hierarchy_lambda", 0.3))
 
-            Веса вычислены sklearn-balanced на train (см. data_prep.compute_class_weights).
-            Перемещаются на device логитов лениво — чтобы не падало при PEFT-загрузке
-            до того как модель окажется на GPU.
+        # class_to_group тензор для hierarchy-регуляризатора
+        class_to_group = None
+        if use_hierarchy:
+            ctg_arr = class_groups_to_array(self.class_groups)
+            class_to_group = torch.tensor(ctg_arr, dtype=torch.long)
+            print(f"[Hierarchy] enabled, lambda={hierarchy_lambda}, "
+                  f"groups distribution: A={int((ctg_arr==0).sum())}, "
+                  f"B={int((ctg_arr==1).sum())}, C={int((ctg_arr==2).sum())}")
+
+        if loss_type == "focal":
+            print(f"[Loss] Focal (gamma={focal_gamma})")
+        else:
+            print(f"[Loss] CrossEntropy")
+
+        class ConfigurableLossTrainer(Trainer):
+            """Trainer с настраиваемым лоссом:
+            - loss_type='ce' | 'focal'
+            - class_weights — sklearn-balanced (опционально)
+            - hierarchy regularizer — штраф за вероятностную массу классов из
+              "неправильной" группы (A/B/C). Идея: модель не должна путать группы.
+
+            Все веса/маски лениво переносятся на device логитов на forward.
             """
-            def __init__(self, *targs, class_weights=None, **tkwargs):
+            def __init__(self, *targs,
+                         loss_type="ce",
+                         focal_gamma=2.0,
+                         class_weights=None,
+                         use_hierarchy=False,
+                         hierarchy_lambda=0.3,
+                         class_to_group=None,
+                         **tkwargs):
                 super().__init__(*targs, **tkwargs)
+                self._loss_type = loss_type
+                self._focal_gamma = focal_gamma
                 self._class_weights = class_weights
+                self._use_hierarchy = use_hierarchy
+                self._hierarchy_lambda = hierarchy_lambda
+                self._class_to_group = class_to_group
+
+            def _focal_loss(self, logits, labels, weight):
+                """Focal loss = -(1-pt)^gamma * log(pt) * alpha_t.
+
+                Совместима с class_weights (alpha_t берётся из weight[label]).
+                """
+                log_probs = F.log_softmax(logits, dim=-1)
+                log_pt = log_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+                pt = log_pt.exp()
+                focal_term = (1 - pt) ** self._focal_gamma
+                loss = -focal_term * log_pt
+                if weight is not None:
+                    loss = loss * weight[labels]
+                return loss.mean()
+
+            def _hierarchy_penalty(self, logits, labels):
+                """Сумма softmax-вероятностей классов, чья группа != группа label.
+
+                Для каждого примера: считаем prob mass на классы из других групп
+                и штрафуем. Заставляет модель сначала научиться различать
+                группы A/B/C, и только потом — конкретный класс внутри группы.
+                """
+                ctg = self._class_to_group.to(logits.device)
+                probs = F.softmax(logits, dim=-1)
+                sample_groups = ctg[labels]                              # (B,)
+                wrong_group_mask = ctg.unsqueeze(0) != sample_groups.unsqueeze(1)  # (B, C)
+                wrong_prob = (probs * wrong_group_mask.to(probs.dtype)).sum(dim=-1)
+                return wrong_prob.mean()
 
             def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
                 labels = inputs.pop("labels")
                 outputs = model(**inputs)
                 logits = outputs.logits
+
                 weight = None
                 if self._class_weights is not None:
                     weight = self._class_weights.to(logits.device, dtype=logits.dtype)
-                loss_fct = nn.CrossEntropyLoss(weight=weight)
-                loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+
+                flat_logits = logits.view(-1, logits.size(-1))
+                flat_labels = labels.view(-1)
+
+                if self._loss_type == "focal":
+                    loss = self._focal_loss(flat_logits, flat_labels, weight)
+                else:
+                    loss = nn.CrossEntropyLoss(weight=weight)(flat_logits, flat_labels)
+
+                if self._use_hierarchy and self._class_to_group is not None:
+                    h = self._hierarchy_penalty(flat_logits, flat_labels)
+                    loss = loss + self._hierarchy_lambda * h
+
                 return (loss, outputs) if return_outputs else loss
 
-        trainer_cls = WeightedCETrainer if self.use_class_weights else Trainer
-        trainer_kwargs = dict(
-            model=self.model,
-            args=args,
-            train_dataset=self.train_ds,
-            eval_dataset=self.eval_ds,
-            processing_class=self.tokenizer,
-            data_collator=self.collator,
-            compute_metrics=compute_metrics,
-            callbacks=[EarlyStoppingCallback(
-                early_stopping_patience=self.early_stopping_patience
-            )],
+        # Решаем, нужен ли кастомный Trainer.
+        # Если ничего из новых опций не включено и class_weights выкл — стандартный.
+        needs_custom = (
+            self.use_class_weights
+            or loss_type == "focal"
+            or use_hierarchy
         )
-        if self.use_class_weights:
-            trainer_kwargs["class_weights"] = self.class_weights
-        trainer = trainer_cls(**trainer_kwargs)
+
+        if needs_custom:
+            trainer = ConfigurableLossTrainer(
+                model=self.model,
+                args=args,
+                train_dataset=self.train_ds,
+                eval_dataset=self.eval_ds,
+                processing_class=self.tokenizer,
+                data_collator=self.collator,
+                compute_metrics=compute_metrics,
+                callbacks=[EarlyStoppingCallback(
+                    early_stopping_patience=self.early_stopping_patience
+                )],
+                loss_type=loss_type,
+                focal_gamma=focal_gamma,
+                class_weights=self.class_weights if self.use_class_weights else None,
+                use_hierarchy=use_hierarchy,
+                hierarchy_lambda=hierarchy_lambda,
+                class_to_group=class_to_group,
+            )
+        else:
+            trainer = Trainer(
+                model=self.model,
+                args=args,
+                train_dataset=self.train_ds,
+                eval_dataset=self.eval_ds,
+                processing_class=self.tokenizer,
+                data_collator=self.collator,
+                compute_metrics=compute_metrics,
+                callbacks=[EarlyStoppingCallback(
+                    early_stopping_patience=self.early_stopping_patience
+                )],
+            )
 
         t0 = time.time()
         recovered_from_save_error = False
@@ -249,6 +349,10 @@ class SeqClsRunner:
             "trainable_params": self.trainable_params,
             "train_time_sec": self.train_time_sec,
             "use_class_weights": bool(self.use_class_weights),
+            "loss": loss_type,
+            "focal_gamma": focal_gamma if loss_type == "focal" else None,
+            "use_hierarchy": use_hierarchy,
+            "hierarchy_lambda": hierarchy_lambda if use_hierarchy else None,
             "recovered_from_checkpoint_save_error": recovered_from_save_error,
         }
         if self.use_class_weights and self.class_weights is not None:
