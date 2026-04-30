@@ -35,7 +35,7 @@ from src.utils.data_loader import (
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
     DATA_DIR, STAGE_FILES,
 )
-from src.augmentation.validation import validate_generated_texts
+from src.augmentation.validation import SIMILARITY_THRESHOLD, validate_generated_texts
 
 
 # --- Настройки этапа (дефолты, переопределяются через pipeline_config) ---
@@ -53,6 +53,8 @@ LANG_EN = "eng_Latn"
 LANG_DE = "deu_Latn"
 LANG_FR = "fra_Latn"
 PIVOT_LANGS = [LANG_EN, LANG_DE, LANG_FR]
+PIVOT_ROUNDS = 2
+SIMILARITY_THRESHOLD_STEP = 0.10
 MAX_LENGTH = 512
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
@@ -310,14 +312,30 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     from src.augmentation.llm_utils import load_llm, select_top_paraphrases
 
     # Каждый pivot — отдельный цикл: перевод → фильтры → судья → чекпоинт.
-    # Следующий pivot добирает только классы, которые всё ещё ниже TARGET_COUNT.
-    for pivot_idx, pivot_lang in enumerate(PIVOT_LANGS, start=1):
+    # После первого круга en → de → fr запускаем второй круг с en и повышаем
+    # верхний порог косинусного сходства на 0.10, чтобы добрать хвост классов.
+    pivot_schedule = [
+        (
+            round_idx,
+            pivot_idx,
+            pivot_lang,
+            SIMILARITY_THRESHOLD + (round_idx - 1) * SIMILARITY_THRESHOLD_STEP,
+        )
+        for round_idx in range(1, PIVOT_ROUNDS + 1)
+        for pivot_idx, pivot_lang in enumerate(PIVOT_LANGS, start=1)
+    ]
+
+    for pivot_round, pivot_idx, pivot_lang, sim_threshold in pivot_schedule:
         classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
         if not classes_to_augment:
             print("\n[Этап 3] Все классы уже ≥ 50 — оставшиеся pivot-языки не нужны")
             break
 
-        print(f"\n[Этап 3] Pivot {pivot_idx}/{len(PIVOT_LANGS)}: {pivot_lang}")
+        print(
+            f"\n[Этап 3] Круг {pivot_round}/{PIVOT_ROUNDS}, "
+            f"pivot {pivot_idx}/{len(PIVOT_LANGS)}: {pivot_lang}, "
+            f"cosine_threshold={sim_threshold:.2f}"
+        )
         for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
             print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
@@ -390,6 +408,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 current_existing = state["existing"] + [p[0] for p in state["accepted_pairs"]]
                 valid = validate_generated_texts(
                     candidates, current_existing, class_name,
+                    similarity_threshold=sim_threshold,
                     sbert_model=sbert_model,
                 )
                 n_after_validation = len(valid)
@@ -476,7 +495,9 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             torch.cuda.empty_cache()
 
         if _PAIRS_CSV.exists():
-            backup = _PAIRS_CSV.with_name(f"_stage3_pairs_cache_{pivot_lang}.bak.csv")
+            backup = _PAIRS_CSV.with_name(
+                f"_stage3_pairs_cache_round{pivot_round}_{pivot_lang}.bak.csv"
+            )
             _PAIRS_CSV.rename(backup)
             print(f"[Этап 3][{pivot_lang}] Кэш пар переименован → {backup.name}")
 
