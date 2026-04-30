@@ -242,6 +242,11 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     """
     global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3
 
+    # Флаг originals_only_sources: если True, BT берётся только из оригинальных
+    # писем (stage 0). Stage 2 используется только для дедупликации.
+    # Устраняет каскадирование синтетики через стадии.
+    originals_only_sources = True
+
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage3
         TARGET_COUNT = s.target_count
@@ -250,12 +255,16 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         MIN_JUDGE_SCORE_STAGE3 = s.min_judge_score
         MODEL_NLLB = pipeline_cfg.gpu.nllb_model
         BATCH_SIZE = pipeline_cfg.gpu.nllb_batch_size
+        # _DotDict наследует dict — используем .get() с default
+        originals_only_sources = bool(s.get("originals_only_sources", True))
 
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     print("=" * 60)
     print("ЭТАП 3: Обратный перевод (< 50 → 50)")
+    print(f"       источник BT: "
+          f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
     print("=" * 60)
 
     # ==========================================================
@@ -289,13 +298,32 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
         print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
+    # Загружаем оригиналы (stage 0) для использования как BT-источников.
+    # Когда originals_only_sources=True — BT идёт только от них, что устраняет
+    # каскадирование синтетики (stage 1/2 → stage 3).
+    df_original = load_dataset(stage=0)
+
     # состояние по классам: что есть, сколько нужно, что накопили
     class_state = {}
     for class_name, current_count in classes_to_augment.items():
+        existing = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
+
+        if originals_only_sources:
+            bt_sources = df_original[
+                df_original[LABEL_COL] == class_name
+            ][TEXT_COL].tolist()
+            if not bt_sources:
+                print(f"  [Внимание] Нет оригиналов для «{class_name}», "
+                      f"fallback на существующие тексты (legacy режим)")
+                bt_sources = existing
+        else:
+            bt_sources = existing
+
         class_state[class_name] = {
-            "existing": df[df[LABEL_COL] == class_name][TEXT_COL].tolist(),
+            "existing": existing,        # для дедупликации в валидации
+            "bt_sources": bt_sources,    # для подачи в NLLB BT (только оригиналы)
             "n_needed": TARGET_COUNT - current_count,
-            "accepted_pairs": [],  # (перевод, оригинал) — для судьи потом
+            "accepted_pairs": [],        # (перевод, оригинал) — для судьи потом
         }
 
     # ==========================================================
@@ -345,7 +373,8 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             for class_name, state in pending.items():
                 pool_gap = state["n_needed"] * 2 - len(state["accepted_pairs"])
                 n_to_generate = max(pool_gap, 1) * OVERSAMPLE_FACTOR
-                sources = select_sources(state["existing"], n_to_generate)
+                # BT идёт от bt_sources (только оригиналы при originals_only_sources=True)
+                sources = select_sources(state["bt_sources"], n_to_generate)
                 all_sources.extend(sources)
                 source_class.extend([class_name] * len(sources))
 
