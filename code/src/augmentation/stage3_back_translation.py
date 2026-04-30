@@ -1,8 +1,8 @@
 """
-stage3_back_translation.py — Этап 3: обратный перевод (RU → EN → RU)
+stage3_back_translation.py — Этап 3: обратный перевод (RU → pivot → RU)
 
 Берём классы с 35–49 примерами и доводим до 50 через обратный перевод.
-NLLB-200 переводит RU→EN→RU, потом валидация фильтрами,
+NLLB-200 переводит RU→pivot→RU, потом валидация фильтрами,
 потом выгружаем NLLB и грузим vLLM — LLM-судья оценивает
 каждый перевод рядом с оригиналом и отбирает лучшие.
 
@@ -50,6 +50,9 @@ MIN_JUDGE_SCORE_STAGE3 = 2.5
 
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
+LANG_DE = "deu_Latn"
+LANG_FR = "fra_Latn"
+PIVOT_LANGS = [LANG_EN, LANG_DE, LANG_FR]
 MAX_LENGTH = 512
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
@@ -179,9 +182,10 @@ def back_translate(
     model: AutoModelForSeq2SeqLM,
     tokenizer: AutoTokenizer,
     device: str,
+    pivot_lang: str = LANG_EN,
 ) -> list[str]:
     """
-    Обратный перевод: RU → EN → RU с сохранением NER-плейсхолдеров.
+    Обратный перевод: RU → pivot → RU с сохранением NER-плейсхолдеров.
 
     Перед переводом маскируем [PERSON], [ORGANIZATION] и т.д. в короткие <0>, <1>, ...
     После перевода восстанавливаем обратно.
@@ -194,17 +198,17 @@ def back_translate(
         masked_texts.append(masked)
         all_placeholders.append(phs)
 
-    # RU → EN
-    en_texts = []
-    for i in tqdm(range(0, len(masked_texts), BATCH_SIZE), desc="    RU→EN", leave=False):
+    # RU → pivot
+    pivot_texts = []
+    for i in tqdm(range(0, len(masked_texts), BATCH_SIZE), desc=f"    RU→{pivot_lang}", leave=False):
         batch = masked_texts[i:i + BATCH_SIZE]
-        en_texts.extend(translate_batch(batch, model, tokenizer, LANG_RU, LANG_EN, device))
+        pivot_texts.extend(translate_batch(batch, model, tokenizer, LANG_RU, pivot_lang, device))
 
-    # EN → RU
+    # pivot → RU
     ru_texts = []
-    for i in tqdm(range(0, len(en_texts), BATCH_SIZE), desc="    EN→RU", leave=False):
-        batch = en_texts[i:i + BATCH_SIZE]
-        ru_texts.extend(translate_batch(batch, model, tokenizer, LANG_EN, LANG_RU, device))
+    for i in tqdm(range(0, len(pivot_texts), BATCH_SIZE), desc=f"    {pivot_lang}→RU", leave=False):
+        batch = pivot_texts[i:i + BATCH_SIZE]
+        ru_texts.extend(translate_batch(batch, model, tokenizer, pivot_lang, LANG_RU, device))
 
     # восстанавливаем плейсхолдеры
     result = []
@@ -365,6 +369,8 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
             print(f"\n[Этап 3] Попытка {attempt}/{MAX_RETRIES}: "
                   f"{len(pending)} классов ещё набирают кандидатов")
+            pivot_lang = PIVOT_LANGS[(attempt - 1) % len(PIVOT_LANGS)]
+            print(f"  Pivot-язык: {pivot_lang}")
 
             # собираем все оригиналы в один список — переводим одним прогоном
             all_sources: list[str] = []
@@ -380,8 +386,8 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
             print(f"  Всего источников для перевода: {len(all_sources)}")
 
-            # один большой RU→EN→RU прогон
-            all_translated = back_translate(all_sources, model, tokenizer, device)
+            # один большой RU→pivot→RU прогон
+            all_translated = back_translate(all_sources, model, tokenizer, device, pivot_lang)
 
             # разбиваем по классам, сохраняя пары (перевод, оригинал)
             pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
