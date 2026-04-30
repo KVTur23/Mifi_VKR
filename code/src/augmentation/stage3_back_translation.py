@@ -240,9 +240,10 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     """
     Основная функция этапа 3.
 
-    Две фазы:
-    1. NLLB перевод + валидация фильтрами (20 попыток, копим пары оригинал→перевод)
-    2. Выгружаем NLLB, грузим vLLM — LLM-судья отбирает лучшие переводы
+    Для каждого pivot-языка отдельно:
+    1. NLLB перевод + валидация фильтрами, копим пары оригинал→перевод
+    2. Выгружаем NLLB, грузим vLLM — LLM-судья отбирает лучшие
+    3. Сохраняем чекпоинт и следующим pivot добираем только оставшиеся классы
     """
     global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3
 
@@ -274,9 +275,8 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     # ==========================================================
     # Определяем сценарий запуска:
     # 1) stage3.csv есть, все ≥ 50       → пропуск
-    # 2) stage3.csv есть, часть < 50     → перевод + судья для оставшихся
-    # 3) stage3.csv нет, кэш пар есть   → судья для всех
-    # 4) stage3.csv нет, кэша нет       → полный прогон
+    # 2) stage3.csv есть, часть < 50     → доаугментация оставшихся
+    # 3) stage3.csv нет                  → полный прогон от stage 2
     # ==========================================================
 
     stage3_file = DATA_DIR / STAGE_FILES[STAGE]
@@ -307,59 +307,46 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     # каскадирование синтетики (stage 1/2 → stage 3).
     df_original = load_dataset(stage=0)
 
-    # состояние по классам: что есть, сколько нужно, что накопили
-    class_state = {}
-    for class_name, current_count in classes_to_augment.items():
-        existing = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
+    from src.augmentation.llm_utils import load_llm, select_top_paraphrases
 
-        if originals_only_sources:
-            bt_sources = df_original[
-                df_original[LABEL_COL] == class_name
-            ][TEXT_COL].tolist()
-            if not bt_sources:
-                print(f"  [Внимание] Нет оригиналов для «{class_name}», "
-                      f"fallback на существующие тексты (legacy режим)")
+    # Каждый pivot — отдельный цикл: перевод → фильтры → судья → чекпоинт.
+    # Следующий pivot добирает только классы, которые всё ещё ниже TARGET_COUNT.
+    for pivot_idx, pivot_lang in enumerate(PIVOT_LANGS, start=1):
+        classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
+        if not classes_to_augment:
+            print("\n[Этап 3] Все классы уже ≥ 50 — оставшиеся pivot-языки не нужны")
+            break
+
+        print(f"\n[Этап 3] Pivot {pivot_idx}/{len(PIVOT_LANGS)}: {pivot_lang}")
+        for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
+            print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
+
+        class_state = {}
+        for class_name, current_count in classes_to_augment.items():
+            existing = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
+
+            if originals_only_sources:
+                bt_sources = df_original[
+                    df_original[LABEL_COL] == class_name
+                ][TEXT_COL].tolist()
+                if not bt_sources:
+                    print(f"  [Внимание] Нет оригиналов для «{class_name}», "
+                          f"fallback на существующие тексты (legacy режим)")
+                    bt_sources = existing
+            else:
                 bt_sources = existing
-        else:
-            bt_sources = existing
 
-        class_state[class_name] = {
-            "existing": existing,        # для дедупликации в валидации
-            "bt_sources": bt_sources,    # для подачи в NLLB BT (только оригиналы)
-            "n_needed": TARGET_COUNT - current_count,
-            "accepted_pairs": [],        # (перевод, оригинал) — для судьи потом
-        }
-
-    # ==========================================================
-    # Проверяем кэш пар фазы 1 — если есть, пропускаем перевод
-    # (только если stage3.csv нет — иначе кэш не актуален)
-    # ==========================================================
-
-    if not has_stage3 and _PAIRS_CSV.exists():
-        print(f"\n[Этап 3] Найден кэш пар фазы 1: {_PAIRS_CSV.name}, загружаю...")
-        pairs_df = pd.read_csv(_PAIRS_CSV)
-        for _, row in pairs_df.iterrows():
-            cn = row[LABEL_COL]
-            if cn in class_state:
-                class_state[cn]["accepted_pairs"].append(
-                    (row["translated"], row["original"])
-                )
-        for cn, st in class_state.items():
-            print(f"  «{cn}»: {len(st['accepted_pairs'])} пар в кэше")
-        print("[Этап 3] Фаза 1 пропущена — пары загружены из кэша")
-    else:
-        # ==========================================================
-        # Фаза 1: NLLB перевод + валидация фильтрами
-        # Копим ВСЕ пары (перевод, оригинал) что прошли фильтры —
-        # судья потом отберёт лучшие по рейтингу
-        # ==========================================================
+            class_state[class_name] = {
+                "existing": existing,
+                "bt_sources": bt_sources,
+                "n_needed": TARGET_COUNT - current_count,
+                "accepted_pairs": [],
+            }
 
         model, tokenizer, device = load_translation_models()
         sbert_model = load_sbert_on_gpu()
 
         for attempt in range(1, MAX_RETRIES + 1):
-            # перевод останавливается когда класс набрал 2x от нужного,
-            # но всё что прошло фильтры сверху — тоже в пул, судья разберётся
             pending = {
                 name: state for name, state in class_state.items()
                 if len(state["accepted_pairs"]) < state["n_needed"] * 2
@@ -367,35 +354,28 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             if not pending:
                 break
 
-            print(f"\n[Этап 3] Попытка {attempt}/{MAX_RETRIES}: "
+            print(f"\n[Этап 3][{pivot_lang}] Попытка {attempt}/{MAX_RETRIES}: "
                   f"{len(pending)} классов ещё набирают кандидатов")
-            pivot_lang = PIVOT_LANGS[(attempt - 1) % len(PIVOT_LANGS)]
-            print(f"  Pivot-язык: {pivot_lang}")
 
-            # собираем все оригиналы в один список — переводим одним прогоном
             all_sources: list[str] = []
             source_class: list[str] = []
 
             for class_name, state in pending.items():
                 pool_gap = state["n_needed"] * 2 - len(state["accepted_pairs"])
                 n_to_generate = max(pool_gap, 1) * OVERSAMPLE_FACTOR
-                # BT идёт от bt_sources (только оригиналы при originals_only_sources=True)
                 sources = select_sources(state["bt_sources"], n_to_generate)
                 all_sources.extend(sources)
                 source_class.extend([class_name] * len(sources))
 
             print(f"  Всего источников для перевода: {len(all_sources)}")
 
-            # один большой RU→pivot→RU прогон
             all_translated = back_translate(all_sources, model, tokenizer, device, pivot_lang)
 
-            # разбиваем по классам, сохраняя пары (перевод, оригинал)
             pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
             for translated, source, cls_name in zip(all_translated, all_sources, source_class):
                 if translated.strip():
                     pairs_by_class[cls_name].append((translated.strip(), source))
 
-            # валидируем по классам, сохраняя связь перевод→оригинал
             for class_name, state in class_state.items():
                 if class_name not in pending:
                     continue
@@ -414,35 +394,31 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 )
                 n_after_validation = len(valid)
 
-                # восстанавливаем пары для текстов что прошли фильтры
                 valid_set = set(valid)
                 valid_pairs = [
                     (t, o) for t, o in zip(candidates, candidate_originals)
                     if t in valid_set
                 ]
-
-                # берём всё что прошло фильтры — судья потом отберёт лучшие
                 state["accepted_pairs"].extend(valid_pairs)
 
-                print(f"  [{attempt}] «{class_name}»: получено {len(candidates)}, "
+                print(f"  [{pivot_lang} {attempt}] «{class_name}»: получено {len(candidates)}, "
                       f"после фильтров {n_after_validation}, "
                       f"в пул +{len(valid_pairs)}, всего в пуле {len(state['accepted_pairs'])}")
 
-            # сохраняем пары в промежуточный csv — при рестарте подхватим
             cache_rows = []
             for cn, st in class_state.items():
                 for translated, original in st["accepted_pairs"]:
                     cache_rows.append({
                         LABEL_COL: cn,
+                        "pivot_lang": pivot_lang,
                         "translated": translated,
                         "original": original,
                     })
             if cache_rows:
                 pd.DataFrame(cache_rows).to_csv(_PAIRS_CSV, index=False)
-                print(f"  [Кэш] Попытка {attempt}: сохранено {len(cache_rows)} пар")
+                print(f"  [Кэш] {pivot_lang}, попытка {attempt}: сохранено {len(cache_rows)} пар")
 
-        # чистим GPU — NLLB и SBERT больше не нужны
-        print("\n[Этап 3] Фаза 1 завершена, выгружаем NLLB...")
+        print(f"\n[Этап 3][{pivot_lang}] Перевод завершён, выгружаем NLLB...")
         unload_from_gpu(model, tokenizer, sbert_model)
         model = tokenizer = sbert_model = None
         import src.augmentation.validation as val_module
@@ -451,63 +427,58 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    # ==========================================================
-    # Фаза 2: грузим vLLM — судья отбирает лучшие переводы
-    # ==========================================================
+        print(f"\n[Этап 3][{pivot_lang}] Грузим LLM-судью...")
+        llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
 
-    print("\n[Этап 3] Фаза 2: грузим LLM-судью...")
+        new_rows = []
+        for class_name, state in class_state.items():
+            pairs = state["accepted_pairs"]
+            current_count = len(df[df[LABEL_COL] == class_name])
+            n_needed = TARGET_COUNT - current_count
 
-    from src.augmentation.llm_utils import load_llm, select_top_paraphrases
-    llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
+            if n_needed <= 0:
+                continue
+            if not pairs:
+                print(f"[Этап 3][{pivot_lang}] Класс «{class_name}»: нет кандидатов после перевода")
+                continue
 
-    # судья оценивает каждый перевод рядом с его оригиналом
-    new_rows = []
+            paras = [p[0] for p in pairs]
+            origs = [p[1] for p in pairs]
 
-    for class_name, state in class_state.items():
-        pairs = state["accepted_pairs"]
-        n_needed = state["n_needed"]
+            print(f"\n[Этап 3][{pivot_lang}] Класс «{class_name}»: "
+                  f"{len(pairs)} кандидатов в пуле, нужно {n_needed}")
 
-        if not pairs:
-            print(f"[Этап 3] Класс «{class_name}»: нет кандидатов после перевода")
-            continue
+            best = select_top_paraphrases(
+                paras, origs, class_name, llm,
+                n_needed=n_needed, min_score=MIN_JUDGE_SCORE_STAGE3,
+            )
 
-        paras = [p[0] for p in pairs]
-        origs = [p[1] for p in pairs]
+            for text in best:
+                new_rows.append({TEXT_COL: text, LABEL_COL: class_name})
 
-        print(f"\n[Этап 3] Класс «{class_name}»: {len(pairs)} кандидатов в пуле, "
-              f"нужно {n_needed}")
+            print(f"[Этап 3][{pivot_lang}] Класс «{class_name}»: отобрано {len(best)} текстов")
 
-        # судья сравнивает каждый перевод с его оригиналом
-        # порог ниже чем у парафраза (2.5 vs 5.0) — обратный перевод неизбежно теряет качество
-        best = select_top_paraphrases(
-            paras, origs, class_name, llm,
-            n_needed=n_needed, min_score=MIN_JUDGE_SCORE_STAGE3,
-        )
+            if len(best) < n_needed:
+                print(f"  [Внимание] «{class_name}»: удалось отобрать только "
+                      f"{len(best)}/{n_needed}")
 
-        for text in best:
-            new_rows.append({TEXT_COL: text, LABEL_COL: class_name})
+        if new_rows:
+            df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+            print(f"\n[Этап 3][{pivot_lang}] Добавлено {len(new_rows)} текстов")
+        else:
+            print(f"\n[Этап 3][{pivot_lang}] Новых текстов не добавлено")
 
-        print(f"[Этап 3] Класс «{class_name}»: отобрано {len(best)} текстов")
+        save_checkpoint(df, stage=STAGE)
 
-        if len(best) < n_needed:
-            print(f"  [Внимание] «{class_name}»: удалось отобрать только "
-                  f"{len(best)}/{n_needed}")
+        del llm
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-    # финальное сохранение
-    if new_rows:
-        new_df = pd.DataFrame(new_rows)
-        df = pd.concat([df, new_df], ignore_index=True)
-        print(f"\n[Этап 3] Всего добавлено {len(new_rows)} текстов")
-    else:
-        print("\n[Этап 3] Новых текстов не сгенерировано")
-
-    save_checkpoint(df, stage=STAGE)
-
-    # кэш пар больше не нужен — переименовываем на всякий случай
-    if _PAIRS_CSV.exists():
-        backup = _PAIRS_CSV.with_suffix(".bak.csv")
-        _PAIRS_CSV.rename(backup)
-        print(f"[Этап 3] Кэш пар фазы 1 переименован → {backup.name}")
+        if _PAIRS_CSV.exists():
+            backup = _PAIRS_CSV.with_name(f"_stage3_pairs_cache_{pivot_lang}.bak.csv")
+            _PAIRS_CSV.rename(backup)
+            print(f"[Этап 3][{pivot_lang}] Кэш пар переименован → {backup.name}")
 
     print(f"\n[Этап 3] Итоговое распределение:")
     dist = get_class_distribution(df)
