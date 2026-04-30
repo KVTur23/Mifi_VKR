@@ -166,7 +166,7 @@ def translate_batch(
                 forced_bos_token_id=target_lang_id,
                 max_length=MAX_LENGTH,
                 do_sample=True,
-                temperature=1.2,
+                temperature=1.0,
                 top_p=0.9,
             )
 
