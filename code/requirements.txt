@@ -3,7 +3,7 @@ transformers>=4.56.0
 torch>=2.1.0
 accelerate>=0.30.0
 sentencepiece>=0.1.99
-sentence-transformers>=3.0.0
+sentence-transformers==3.4.1
 datasets>=4.3.0
 pyarrow>=21.0.0
 pandas>=2.0.0
