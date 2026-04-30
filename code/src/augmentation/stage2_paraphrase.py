@@ -48,9 +48,8 @@ PARAPHRASE_PROMPT = "paraphrase.txt"
 
 def _sampling_for_source_count(sampling_params, source_count: int):
     params = copy.copy(sampling_params)
-    base_temp = float(getattr(params, "temperature", 0.7))
     if source_count <= 6:
-        params.temperature = min(base_temp + 0.1, 0.95)
+        params.temperature = 0.9
         print(f"  Малое число источников ({source_count}) — "
               f"повышаю температуру парафраза до {params.temperature:.2f}")
     return params
