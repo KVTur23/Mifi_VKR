@@ -62,15 +62,29 @@ def augment_class(
     prompt_template: str,
     system_prompt: str | None = None,
     n_original: int | None = None,
+    paraphrase_sources: list[str] | None = None,
 ) -> list[str]:
     """
     Генерирует парафразы для одного класса батчами.
 
     Схема: берём оригиналы по кругу → генерируем 3x с запасом →
     валидация → LLM-судья → берём лучшие. Повторяем если мало.
+
+    Параметры:
+        existing_texts:     все тексты класса (для дедупликации/валидации)
+        paraphrase_sources: тексты-источники для парафраза. Если None —
+                            используется existing_texts (legacy: каскад через
+                            синтетику этапа 1). Если задано (например, оригиналы
+                            из train_after_eda.csv) — каждый парафраз отстоит
+                            от реального текста ровно на 1 LLM-операцию.
     """
     all_valid_texts = []
     current_existing = list(existing_texts)
+
+    # По умолчанию — legacy (источник = всё, что есть, включая синтетику stage 1).
+    # Передаём paraphrase_sources, чтобы фиксить каскадирование.
+    if paraphrase_sources is None:
+        paraphrase_sources = existing_texts
 
     for attempt in range(1, MAX_RETRIES + 1):
         still_needed = n_needed - len(all_valid_texts)
@@ -82,7 +96,7 @@ def augment_class(
               f"генерируем батч из {batch_size} парафразов")
 
         # выбираем оригиналы равномерно по кругу — что бы не перефразировать один и тот же 10 раз
-        sources = _select_sources(existing_texts, batch_size)
+        sources = _select_sources(paraphrase_sources, batch_size)
 
         # собираем промпты
         prompts = [
@@ -181,17 +195,28 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     """Основная функция этапа 2."""
     global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR
 
+    # Флаг originals_only_sources: если True (рекомендуется), парафраз берётся
+    # только из оригинальных писем (stage 0), а stage 1 используется только
+    # для дедупликации. Это устраняет каскадирование синтетики через стадии.
+    # По умолчанию True — каскад был выявлен как источник плато f1_C=0.5333
+    # в трёх независимых ранах fine-tune.
+    originals_only_sources = True
+
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage2
         TARGET_COUNT = s.target_count
         MAX_RETRIES = s.max_retries
         OVERSAMPLE_FACTOR = s.oversample_factor
+        # _DotDict наследует dict — используем .get() с default
+        originals_only_sources = bool(s.get("originals_only_sources", True))
 
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     print("=" * 60)
     print(f"ЭТАП 2: Парафраз через LLM (< {TARGET_COUNT} → {TARGET_COUNT})")
+    print(f"       источник парафраза: "
+          f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
     print("=" * 60)
 
     df = load_dataset(stage=STAGE)
@@ -229,8 +254,23 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
         real_original_count = original_counts.get(class_name, current_count)
 
+        # Источник для парафраза: только оригиналы (фикс каскадирования).
+        # Если оригиналов нет (быть не должно после EDA) — fallback на существующее.
+        if originals_only_sources:
+            paraphrase_sources = df_original[
+                df_original[LABEL_COL] == class_name
+            ][TEXT_COL].tolist()
+            if not paraphrase_sources:
+                print(f"  [Внимание] Нет оригиналов для «{class_name}», "
+                      f"fallback на существующие тексты (legacy режим)")
+                paraphrase_sources = existing_texts
+        else:
+            paraphrase_sources = existing_texts
+
         print(f"\n[Этап 2] Класс «{class_name}»: есть {current_count} "
-              f"(из них {real_original_count} оригиналов), нужно ещё {n_needed}")
+              f"(из них {real_original_count} оригиналов), "
+              f"источников парафраза: {len(paraphrase_sources)}, "
+              f"нужно ещё {n_needed}")
 
         try:
             generated = augment_class(
@@ -242,6 +282,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 prompt_template=prompt_template,
                 system_prompt=system_prompt,
                 n_original=real_original_count,
+                paraphrase_sources=paraphrase_sources,
             )
         except Exception as e:
             print(f"[Этап 2] Ошибка при обработке класса «{class_name}»: {e}")
