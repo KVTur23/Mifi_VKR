@@ -16,6 +16,7 @@ stage2_paraphrase.py — Этап 2: парафраз текстов через 
 import sys
 import random
 import argparse
+import copy
 from pathlib import Path
 
 import pandas as pd
@@ -43,6 +44,16 @@ TARGET_COUNT = 35
 MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 5
 PARAPHRASE_PROMPT = "paraphrase.txt"
+
+
+def _sampling_for_source_count(sampling_params, source_count: int):
+    params = copy.copy(sampling_params)
+    base_temp = float(getattr(params, "temperature", 0.7))
+    if source_count <= 6:
+        params.temperature = min(base_temp + 0.1, 0.95)
+        print(f"  Малое число источников ({source_count}) — "
+              f"повышаю температуру парафраза до {params.temperature:.2f}")
+    return params
 
 
 def build_paraphrase_prompt(template: str, original_text: str, class_name: str) -> str:
@@ -85,6 +96,7 @@ def augment_class(
     # Передаём paraphrase_sources, чтобы фиксить каскадирование.
     if paraphrase_sources is None:
         paraphrase_sources = existing_texts
+    class_sampling_params = _sampling_for_source_count(sampling_params, len(paraphrase_sources))
 
     for attempt in range(1, MAX_RETRIES + 1):
         still_needed = n_needed - len(all_valid_texts)
@@ -105,7 +117,7 @@ def augment_class(
         ]
 
         # всё на GPU одним батчем
-        raw_outputs = generate_batch(llm, sampling_params, prompts, system_prompt=system_prompt)
+        raw_outputs = generate_batch(llm, class_sampling_params, prompts, system_prompt=system_prompt)
 
         # убираем пустые, но сохраняем связь парафраз → оригинал
         pairs = [
