@@ -7,7 +7,7 @@ stage3_paraphrase_v2.py — Этап 3 v2: deep paraphrase через Qwen2.5-32
 Использует новый промпт paraphrase_v3.txt с инструкцией глубокой
 переработки (структура, перспектива) при сохранении класса.
 
-Вход:  Data/data_after_stage2.csv
+Вход:  Data/data_after_stage2.csv  (или data_after_stage3.csv если чекпоинт есть)
 Выход: Data/data_after_stage3.csv
 
 Запуск:
@@ -29,6 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.utils.data_loader import (
     load_dataset, save_checkpoint, get_class_distribution,
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
+    DATA_DIR, STAGE_FILES,
 )
 from src.augmentation.llm_utils import (
     load_llm, generate_batch,
@@ -41,7 +42,6 @@ from src.utils.config_loader import load_model_config
 # --- Настройки этапа ---
 
 STAGE = 3
-INPUT_STAGE = 2
 TARGET_COUNT = 50
 MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 4
@@ -205,10 +205,16 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
 
 def run(config_path: str | Path = DEFAULT_CONFIG, pipeline_cfg=None) -> None:
     """Основная функция этапа 3 v2."""
+    global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR, JUDGE_THRESHOLD
+
     originals_only_sources = True
 
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage3
+        TARGET_COUNT = s.target_count
+        MAX_RETRIES = s.max_retries
+        OVERSAMPLE_FACTOR = s.oversample_factor
+        JUDGE_THRESHOLD = s.min_judge_score
         originals_only_sources = bool(s.get("originals_only_sources", True))
 
     random.seed(RANDOM_SEED)
@@ -216,20 +222,32 @@ def run(config_path: str | Path = DEFAULT_CONFIG, pipeline_cfg=None) -> None:
 
     print("=" * 60)
     print(f"ЭТАП 3 V2: Deep paraphrase через LLM (< {TARGET_COUNT} → {TARGET_COUNT})")
-    print("       вход:  Data/data_after_stage2.csv")
+    print("       вход:  Data/data_after_stage2.csv (или Data/data_after_stage3.csv при резюме)")
     print("       выход: Data/data_after_stage3.csv")
     print(f"       источник парафраза: "
           f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
     print("=" * 60)
 
-    df = load_dataset(stage=INPUT_STAGE)
+    stage3_file = DATA_DIR / STAGE_FILES[STAGE]
+    has_stage3 = stage3_file.exists()
+
+    # Запрашиваем текущий этап, чтобы повторный запуск продолжал с
+    # data_after_stage3.csv, а при его отсутствии откатывался к stage 2.
+    df = load_dataset(stage=STAGE)
 
     classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
 
     if not classes_to_augment:
-        print(f"[Этап 3 V2] Все классы уже имеют >= {TARGET_COUNT} примеров, этап пропущен")
+        if has_stage3:
+            print(f"[Этап 3 V2] Все классы уже имеют >= {TARGET_COUNT} примеров, этап пропущен")
+            return
+        print(f"[Этап 3 V2] Все классы уже имеют >= {TARGET_COUNT} примеров, сохраняю stage 3")
         save_checkpoint(df, stage=STAGE)
         return
+
+    if has_stage3:
+        print(f"[Этап 3 V2] Чекпоинт неполный, "
+              f"{len(classes_to_augment)} классов < {TARGET_COUNT} — доаугментируем")
 
     print(f"\n[Этап 3 V2] Классов для аугментации: {len(classes_to_augment)}")
     for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):

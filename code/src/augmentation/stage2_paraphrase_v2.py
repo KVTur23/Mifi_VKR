@@ -4,9 +4,9 @@ stage2_paraphrase_v2.py — Этап 2 v2: light paraphrase через Qwen2.5-3
 Заменяет старый Stage 2 (paraphrase.txt). Использует новый промпт
 paraphrase_v2.txt с явной защитой плейсхолдеров и контролем длины.
 
-Берёт классы B и C, доводит до 50 примеров.
+Берёт классы с < 35 примерами и доводит до 35, как старый Stage 2.
 
-Вход:  Data/data_after_stage1.csv
+Вход:  Data/data_after_stage1.csv  (или data_after_stage2.csv если чекпоинт есть)
 Выход: Data/data_after_stage2.csv
 
 Запуск:
@@ -40,8 +40,7 @@ from src.utils.config_loader import load_model_config
 # --- Настройки этапа ---
 
 STAGE = 2
-INPUT_STAGE = 1
-TARGET_COUNT = 50
+TARGET_COUNT = 35
 MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 5
 PARAPHRASE_PROMPT = "paraphrase_v2.txt"
@@ -206,14 +205,15 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
 
 def run(config_path: str | Path = DEFAULT_CONFIG, pipeline_cfg=None) -> None:
     """Основная функция этапа 2 v2."""
-    global MAX_RETRIES, OVERSAMPLE_FACTOR
+    global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR
 
     originals_only_sources = True
 
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage2
-        MAX_RETRIES = s.get("max_retries", MAX_RETRIES)
-        OVERSAMPLE_FACTOR = s.get("oversample_factor", OVERSAMPLE_FACTOR)
+        TARGET_COUNT = s.target_count
+        MAX_RETRIES = s.max_retries
+        OVERSAMPLE_FACTOR = s.oversample_factor
         originals_only_sources = bool(s.get("originals_only_sources", True))
 
     random.seed(RANDOM_SEED)
@@ -221,13 +221,15 @@ def run(config_path: str | Path = DEFAULT_CONFIG, pipeline_cfg=None) -> None:
 
     print("=" * 60)
     print(f"ЭТАП 2 V2: Light paraphrase через LLM (< {TARGET_COUNT} → {TARGET_COUNT})")
-    print("       вход:  Data/data_after_stage1.csv")
+    print("       вход:  Data/data_after_stage1.csv (или Data/data_after_stage2.csv при резюме)")
     print("       выход: Data/data_after_stage2.csv")
     print(f"       источник парафраза: "
           f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
     print("=" * 60)
 
-    df = load_dataset(stage=INPUT_STAGE)
+    # Запрашиваем текущий этап, чтобы повторный запуск продолжал с
+    # data_after_stage2.csv, а при его отсутствии откатывался к stage 1.
+    df = load_dataset(stage=STAGE)
 
     classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
 
@@ -325,7 +327,7 @@ def main(config_path: str | Path = DEFAULT_CONFIG, pipeline_cfg=None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Этап 2 v2: light paraphrase для классов с < 50 примерами"
+        description="Этап 2 v2: light paraphrase для классов с < 35 примерами"
     )
     parser.add_argument(
         "--config",
