@@ -3,12 +3,15 @@ validation.py — Валидация сгенерированных тексто
 
 Фильтры:
 1. Точные дубликаты — убираем совпадения с существующими и между собой
-2. Короткие тексты — скорее всего мусор или обрезки
+2. Короткие тексты — мусор/обрезки
 3. Не русский язык — актуально после обратного перевода
 4. Вырожденные тексты — повторы слов, бессмыслица
-5. Иностранные символы — тексты с CJK-иероглифами (японский, китайский, корейский)
+5. Иностранные символы — CJK иероглифы (китайский/японский/корейский)
 6. Промпт-утечка — LLM описала задание вместо того чтобы написать письмо
 7. Косинусное сходство — слишком похожие на существующие (почти копии)
+8. Сломанные плейсхолдеры — артефакты NLLB (<10>, NEFT, OKPO, ...)
+9. Максимальная длина — фильтр галлюцинаций (>5000 симв)
+10. Обрезанные на середине — текст не завершён грамматически
 """
 
 import re
@@ -24,10 +27,29 @@ SIMILARITY_THRESHOLD = 0.95  # Верхний порог косинусного 
 SIMILARITY_THRESHOLD_LOW = 0.98  # Мягкий порог для классов с 1 оригинальным примером
 SIMILARITY_THRESHOLD_MIN = 0.5   # Нижний порог (слишком далёк → текст исказился до неузнаваемости)
 MIN_TEXT_LENGTH = 500        # Минимальная длина в символах (медиана оригинала ~1255)
+MAX_TEXT_LENGTH = 5000       # Выше этого — вероятно галлюцинация LLM
 SBERT_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"  # Русскоязычная SBERT для эмбеддингов
 # можно заменить на ai-forever/ru-en-RoSBERTa 
 # Кэш модели на уровне модуля — грузим один раз, переиспользуем во всех вызовах
 _sbert_model = None
+
+# Сломанные плейсхолдеры от NLLB и подобного
+_BROKEN_PLACEHOLDERS_RE = re.compile(
+    r"<\d+>?"                  # <10>, <9, <15
+    r"|<[A-Z]{2,5}\b"          # <FD, <NUM, <ORG (без закрывающей >)
+    r"|\bNEFT\b"               # транслитерация НЕФТЬ
+    r"|\bGAZ\b"                # транслитерация ГАЗ
+    r"|\bOKPO\b"               # транслитерация ОКПО
+    r"|\bOGRN\b"               # транслитерация ОГРН
+    r"|\bINN\b"                # транслитерация ИНН
+    r"|\bKPP\b"                # транслитерация КПП
+    r"|\bBIK\b"                # транслитерация БИК
+)
+
+_TRUNCATED_END_RE = re.compile(
+    r"[а-яa-z]{3,}\s*$",  # текст заканчивается на середине слова в нижнем регистре
+    re.IGNORECASE,
+)
 
 
 def get_sbert_model() -> SentenceTransformer:
@@ -84,6 +106,9 @@ def validate_generated_texts(
     texts = filter_non_russian(texts, class_name)
     texts = filter_degenerate(texts, class_name)
     texts = filter_foreign_scripts(texts, class_name)
+    texts = filter_broken_placeholders(texts, class_name)
+    texts = filter_max_length(texts, class_name)
+    texts = filter_truncated(texts, class_name)
     texts = filter_prompt_leak(texts, class_name)
 
     threshold = similarity_threshold
@@ -301,6 +326,64 @@ def filter_foreign_scripts(
         print(f"  [Иноязычные символы] Класс «{class_name}»: отсеяно {removed} текстов "
               f"(содержат иероглифы)")
 
+    return filtered
+
+
+def filter_broken_placeholders(
+    texts: list[str],
+    class_name: str,
+) -> list[str]:
+    """Фильтр 8: Сломанные плейсхолдеры (broken placeholders) от back-translation.
+
+    Удаляет тексты, содержащие <10>, <FD, NEFT, OKPO и подобные артефакты
+    транслитерации/токенизации, которые появляются после NLLB обратного перевода.
+    """
+    filtered = [t for t in texts if not _BROKEN_PLACEHOLDERS_RE.search(t)]
+    removed = len(texts) - len(filtered)
+    if removed > 0:
+        print(f"[Валидация] Класс «{class_name}»: broken_placeholders отсеяно {removed}")
+    return filtered
+
+
+def filter_max_length(
+    texts: list[str],
+    class_name: str,
+    max_length: int = MAX_TEXT_LENGTH,
+) -> list[str]:
+    """Фильтр 9: Слишком длинные тексты (likely галлюцинация LLM)."""
+    filtered = [t for t in texts if len(t.strip()) <= max_length]
+    removed = len(texts) - len(filtered)
+    if removed > 0:
+        print(f"[Валидация] Класс «{class_name}»: max_length отсеяно {removed}")
+    return filtered
+
+
+def filter_truncated(
+    texts: list[str],
+    class_name: str,
+) -> list[str]:
+    """Фильтр 10: Текст обрезан на середине слова (truncated mid-word).
+
+    Письмо должно заканчиваться знаком препинания (. ! ?) или специальной
+    конструкцией (подпись, [PERSON]). Если заканчивается на середине слова —
+    LLM не дописал, отбрасываем.
+    """
+    def is_proper_ending(text: str) -> bool:
+        text = text.strip()
+        if not text:
+            return False
+        # Допустимые окончания
+        if text[-1] in '.!?»"':
+            return True
+        # Заканчивается плейсхолдером
+        if text.endswith("]") and "[" in text[-30:]:
+            return True
+        return False
+
+    filtered = [t for t in texts if is_proper_ending(t)]
+    removed = len(texts) - len(filtered)
+    if removed > 0:
+        print(f"[Валидация] Класс «{class_name}»: truncated отсеяно {removed}")
     return filtered
 
 
