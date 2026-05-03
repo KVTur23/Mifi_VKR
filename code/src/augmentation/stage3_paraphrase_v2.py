@@ -47,13 +47,15 @@ MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 4
 PARAPHRASE_PROMPT = "paraphrase_v3.txt"
 JUDGE_THRESHOLD = 4.0
-SAMPLING_TEMP = 0.8
 DEFAULT_CONFIG = PROJECT_ROOT / "config_models" / "aug_configs" / "model_vllm_32b.json"
 
 
-def _sampling_for_stage3(sampling_params):
+def _sampling_for_source_count(sampling_params, source_count: int):
     params = copy.copy(sampling_params)
-    params.temperature = SAMPLING_TEMP
+    if source_count <= 6:
+        params.temperature = 0.9
+        print(f"  Малое число источников ({source_count}) — "
+              f"повышаю температуру парафраза до {params.temperature:.2f}")
     return params
 
 
@@ -102,7 +104,7 @@ def augment_class(
         print(f"  [Внимание] Класс «{class_name}»: нет источников для парафраза")
         return []
 
-    class_sampling_params = _sampling_for_stage3(sampling_params)
+    class_sampling_params = _sampling_for_source_count(sampling_params, len(paraphrase_sources))
     class_description = class_description or _class_description(class_name)
 
     for attempt in range(1, MAX_RETRIES + 1):
