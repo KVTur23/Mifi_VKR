@@ -56,7 +56,7 @@
     },
     "stage3": {
       "target_count": 50,
-      "max_retries": 20,
+      "max_retries": 10,
       "oversample_factor": 3,
       "min_judge_score": 2.5,
       "originals_only_sources": true
