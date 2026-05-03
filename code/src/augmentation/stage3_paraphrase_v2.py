@@ -47,6 +47,12 @@ MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 4
 PARAPHRASE_PROMPT = "paraphrase_v3.txt"
 JUDGE_THRESHOLD = 4.0
+TEMP_RAMP_START_ROUND = 5
+TEMP_RAMP_ROUNDS_PER_STEP = 3
+TEMP_RAMP_STEP = 0.1
+TEMP_MAX = 1.0
+OVERSAMPLE_RAMP_START_ROUND = 5
+OVERSAMPLE_BONUS = 2
 DEFAULT_CONFIG = PROJECT_ROOT / "config_models" / "aug_configs" / "model_vllm_32b.json"
 
 
@@ -57,6 +63,20 @@ def _sampling_for_source_count(sampling_params, source_count: int):
         print(f"  Малое число источников ({source_count}) — "
               f"повышаю температуру парафраза до {params.temperature:.2f}")
     return params
+
+
+def _progressive_sampling(sampling_params, attempt: int):
+    params = copy.copy(sampling_params)
+    if attempt >= TEMP_RAMP_START_ROUND:
+        steps = ((attempt - TEMP_RAMP_START_ROUND) // TEMP_RAMP_ROUNDS_PER_STEP) + 1
+        params.temperature = min(TEMP_MAX, params.temperature + steps * TEMP_RAMP_STEP)
+    return params
+
+
+def _progressive_oversample_factor(attempt: int) -> int:
+    if attempt >= OVERSAMPLE_RAMP_START_ROUND:
+        return OVERSAMPLE_FACTOR + OVERSAMPLE_BONUS
+    return OVERSAMPLE_FACTOR
 
 
 def _class_description(class_name: str) -> str:
@@ -112,9 +132,13 @@ def augment_class(
         if still_needed <= 0:
             break
 
-        batch_size = int(still_needed * OVERSAMPLE_FACTOR) + 1
+        attempt_sampling_params = _progressive_sampling(class_sampling_params, attempt)
+        oversample_factor = _progressive_oversample_factor(attempt)
+
+        batch_size = int(still_needed * oversample_factor) + 1
         print(f"  [Раунд {attempt}/{MAX_RETRIES}] Нужно ещё {still_needed}, "
-              f"генерируем батч из {batch_size} deep-парафразов")
+              f"генерируем батч из {batch_size} deep-парафразов "
+              f"(temp={attempt_sampling_params.temperature:.2f}, oversample={oversample_factor})")
 
         sources = _select_sources(paraphrase_sources, batch_size)
         prompts = [
@@ -124,7 +148,7 @@ def augment_class(
             for source in sources
         ]
 
-        raw_outputs = generate_batch(llm, class_sampling_params, prompts, system_prompt=system_prompt)
+        raw_outputs = generate_batch(llm, attempt_sampling_params, prompts, system_prompt=system_prompt)
 
         pairs = [
             (text, source)

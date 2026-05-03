@@ -41,6 +41,12 @@ TARGET_COUNT = 15
 MAX_RETRIES = 5
 MAX_EXAMPLES_IN_PROMPT = 5
 OVERSAMPLE_FACTOR = 5
+TEMP_RAMP_START_ROUND = 5
+TEMP_RAMP_ROUNDS_PER_STEP = 3
+TEMP_RAMP_STEP = 0.1
+TEMP_MAX = 1.0
+OVERSAMPLE_RAMP_START_ROUND = 5
+OVERSAMPLE_BONUS = 2
 
 
 def _sampling_for_source_count(sampling_params, source_count: int, stage_name: str):
@@ -50,6 +56,20 @@ def _sampling_for_source_count(sampling_params, source_count: int, stage_name: s
         print(f"  Малое число оригиналов ({source_count}) — "
               f"повышаю температуру {stage_name} до {params.temperature:.2f}")
     return params
+
+
+def _progressive_sampling(sampling_params, attempt: int):
+    params = copy.copy(sampling_params)
+    if attempt >= TEMP_RAMP_START_ROUND:
+        steps = ((attempt - TEMP_RAMP_START_ROUND) // TEMP_RAMP_ROUNDS_PER_STEP) + 1
+        params.temperature = min(TEMP_MAX, params.temperature + steps * TEMP_RAMP_STEP)
+    return params
+
+
+def _progressive_oversample_factor(attempt: int) -> int:
+    if attempt >= OVERSAMPLE_RAMP_START_ROUND:
+        return OVERSAMPLE_FACTOR + OVERSAMPLE_BONUS
+    return OVERSAMPLE_FACTOR
 
 
 def generate_class_context(
@@ -111,7 +131,7 @@ def augment_class(
     """
     Генерирует тексты для одного класса батчами.
 
-    Схема: генерируем с запасом 3x → валидация (фильтры) → LLM-судья (оценка) → берём лучшие.
+    Схема: генерируем с запасом → валидация (фильтры) → LLM-судья (оценка) → берём лучшие.
     Если после всего не хватает — повторяем (до MAX_RETRIES раз).
     """
     all_valid_texts = []
@@ -123,14 +143,20 @@ def augment_class(
     )
 
     for attempt in range(MAX_RETRIES):
+        human_attempt = attempt + 1
         still_needed = n_needed - len(all_valid_texts)
         if still_needed <= 0:
             break
 
-        # генерируем 3x от нужного — часть отсеется фильтрами, часть судьёй
-        batch_size = int(still_needed * OVERSAMPLE_FACTOR) + 1
-        print(f"  [Генерация] Раунд {attempt + 1}/{MAX_RETRIES}: "
-              f"генерируем батч из {batch_size} промптов (нужно ещё {still_needed})")
+        attempt_sampling_params = _progressive_sampling(class_sampling_params, human_attempt)
+        oversample_factor = _progressive_oversample_factor(human_attempt)
+
+        # генерируем с запасом — часть отсеется фильтрами, часть судьёй
+        batch_size = int(still_needed * oversample_factor) + 1
+        print(f"  [Генерация] Раунд {human_attempt}/{MAX_RETRIES}: "
+              f"генерируем батч из {batch_size} промптов "
+              f"(нужно ещё {still_needed}, temp={attempt_sampling_params.temperature:.2f}, "
+              f"oversample={oversample_factor})")
 
         # список промптов с разным набором примеров — для разнообразия
         prompts = [
@@ -139,18 +165,17 @@ def augment_class(
         ]
 
         # всё летит на GPU одним батчем
-        raw_outputs = generate_batch(llm, class_sampling_params, prompts, system_prompt=system_prompt)
+        raw_outputs = generate_batch(llm, attempt_sampling_params, prompts, system_prompt=system_prompt)
 
         # выкидываем пустые ответы
         candidates = [text for text in raw_outputs if text]
 
         if not candidates:
-            print(f"  [Генерация] Раунд {attempt + 1}: все выходы пустые, повторяю")
+            print(f"  [Генерация] Раунд {human_attempt}: все выходы пустые, повторяю")
             continue
 
         # прогрессивный порог сходства: первые 2 попытки строгий (0.95),
         # потом каждую попытку +0.01, максимум 0.98
-        human_attempt = attempt + 1
         sim_threshold = min(0.95 + max(0, human_attempt - 2) * 0.01, 0.98)
 
         # прогоняем через фильтры (дубликаты, длина, язык, сходство и т.д.)
@@ -171,7 +196,7 @@ def augment_class(
         all_valid_texts.extend(valid[:to_take])
         current_existing.extend(valid[:to_take])
 
-        print(f"  [Генерация] Раунд {attempt + 1}: "
+        print(f"  [Генерация] Раунд {human_attempt}: "
               f"получено {len(candidates)}, после фильтров {n_after_validation}, "
               f"после судьи {len(valid)}, принято {to_take}, "
               f"всего {len(all_valid_texts)}/{n_needed}")
