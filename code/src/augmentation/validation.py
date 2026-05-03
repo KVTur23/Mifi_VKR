@@ -46,10 +46,13 @@ _BROKEN_PLACEHOLDERS_RE = re.compile(
     r"|\bBIK\b"                # транслитерация БИК
 )
 
-_TRUNCATED_END_RE = re.compile(
-    r"[а-яa-z]{3,}\s*$",  # текст заканчивается на середине слова в нижнем регистре
-    re.IGNORECASE,
-)
+_DANGLING_END_RE = re.compile(r"[-–—/\\([{<]\s*$")
+_DANGLING_FINAL_WORDS = {
+    "и", "а", "но", "или", "либо", "что", "чтобы", "как",
+    "в", "во", "на", "по", "с", "со", "к", "ко", "от", "до",
+    "для", "при", "над", "под", "без", "из", "у", "о", "об",
+}
+_TERMINAL_END_CHARS = set(".!?…)]}»\"'")
 
 
 def get_sbert_model() -> SentenceTransformer:
@@ -364,26 +367,55 @@ def filter_truncated(
 ) -> list[str]:
     """Фильтр 10: Текст обрезан на середине слова (truncated mid-word).
 
-    Письмо должно заканчиваться знаком препинания (. ! ?) или специальной
-    конструкцией (подпись, [PERSON]). Если заканчивается на середине слова —
-    LLM не дописал, отбрасываем.
+    Жёсткий вариант фильтра отбрасывал нормальные деловые письма, если модель
+    заканчивала подписью, номером или обычным словом без финальной точки.
+    Теперь нормальные хвосты мягко завершаются точкой, а явно оборванные
+    окончания всё ещё отбрасываются.
     """
-    def is_proper_ending(text: str) -> bool:
+    def normalize_ending(text: str) -> str | None:
         text = text.strip()
         if not text:
-            return False
-        # Допустимые окончания
-        if text[-1] in '.!?»"':
-            return True
-        # Заканчивается плейсхолдером
-        if text.endswith("]") and "[" in text[-30:]:
-            return True
-        return False
+            return None
 
-    filtered = [t for t in texts if is_proper_ending(t)]
+        if text[-1] in _TERMINAL_END_CHARS:
+            return text
+
+        if _DANGLING_END_RE.search(text):
+            return None
+
+        candidate = text.rstrip(" \t\r\n,;:")
+        if not candidate:
+            return None
+        if candidate[-1] in _TERMINAL_END_CHARS:
+            return candidate
+
+        tail = re.search(r"([A-Za-zА-Яа-яЁё0-9_]+)$", candidate)
+        if not tail:
+            return None
+        final_word = tail.group(1).lower()
+        if final_word in _DANGLING_FINAL_WORDS:
+            return None
+
+        return candidate + "."
+
+    filtered = []
+    repaired = 0
+    for text in texts:
+        normalized = normalize_ending(text)
+        if normalized is None:
+            continue
+        if normalized != text.strip():
+            repaired += 1
+        filtered.append(normalized)
+
     removed = len(texts) - len(filtered)
     if removed > 0:
-        print(f"[Валидация] Класс «{class_name}»: truncated отсеяно {removed}")
+        msg = f"[Валидация] Класс «{class_name}»: truncated отсеяно {removed}"
+        if repaired:
+            msg += f", нормализовано окончаний {repaired}"
+        print(msg)
+    elif repaired:
+        print(f"[Валидация] Класс «{class_name}»: нормализовано окончаний {repaired}")
     return filtered
 
 
