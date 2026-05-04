@@ -227,7 +227,7 @@ def filter_short_text_pairs(
     for text, source in pairs:
         threshold = min_length
         if source is not None and min_length_ratio is not None:
-            threshold = min(threshold, int(len(source.strip()) * min_length_ratio))
+            threshold = max(threshold, int(len(source.strip()) * min_length_ratio))
             threshold = max(threshold, 1)
 
         if len(text.strip()) >= threshold:
@@ -239,7 +239,7 @@ def filter_short_text_pairs(
         if min_length_ratio is None:
             rule = f"короче {min_length} символов"
         else:
-            rule = f"короче min({min_length}, {min_length_ratio:.0%} от источника)"
+            rule = f"короче max({min_length}, {min_length_ratio:.0%} от источника)"
         print(f"  [Длина] Класс «{class_name}»: отсеяно {removed} текстов ({rule})")
 
     return filtered
