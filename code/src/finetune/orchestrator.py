@@ -71,6 +71,8 @@ def _derive_run_key(config_path: Path) -> str:
     """Читает модельный JSON и строит run_key тем же способом, что и SeqClsRunner."""
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
+    if cfg.get("run_key"):
+        return str(cfg["run_key"])
     return f"{cfg['method']}_{_model_short(cfg['model_name'])}"
 
 

@@ -57,7 +57,7 @@ class SeqClsRunner:
 
         self.method = self.cfg["method"]
         self.model_name = self.cfg["model_name"]
-        self.run_key = f"{self.method}_{_model_short(self.model_name)}"
+        self.run_key = self.cfg.get("run_key") or f"{self.method}_{_model_short(self.model_name)}"
 
         common = pipeline_cfg["finetune"]["common"]
         self.output_dir = Path(common["output_dir"]) / self.run_key
