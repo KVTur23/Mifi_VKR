@@ -1,10 +1,9 @@
 """
-stage2_paraphrase.py — Этап 2: парафраз текстов через LLM (батчевый режим)
+stage2_paraphrase.py — Этап 2: ruT5-парафраз с чанкованием.
 
-Берём классы с 15–34 примерами и доводим до 35 через перефразирование.
-Для каждого текста берём оригинал и просим LLM переписать его другими словами.
-
-Генерация батчами через vLLM, потом валидация + LLM-судья.
+Берём классы с 15–34 примерами и доводим до 35 через
+fyaronskiy/ruT5-large-paraphraser. Длинные письма режутся на
+tokenizer-aware чанки и собираются обратно перед валидацией.
 
 Вход:  Data/data_after_stage1.csv  (или data_after_stage2.csv если чекпоинт есть)
 Выход: Data/data_after_stage2.csv
@@ -16,11 +15,12 @@ stage2_paraphrase.py — Этап 2: парафраз текстов через 
 import sys
 import random
 import argparse
-import copy
+import gc
 from pathlib import Path
 
 import pandas as pd
 import numpy as np
+import torch
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -29,160 +29,97 @@ from src.utils.data_loader import (
     load_dataset, save_checkpoint, get_class_distribution,
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
 )
-from src.augmentation.llm_utils import (
-    load_llm, generate_batch,
-    load_prompt_template, select_top_paraphrases,
-)
+from src.augmentation.llm_utils import load_llm, select_top_paraphrases
+from src.augmentation.rut5_paraphraser import RuT5Paraphraser
 from src.augmentation.validation import validate_generated_texts
-from src.utils.config_loader import load_model_config
 
-
-# --- Настройки этапа (дефолты, переопределяются через pipeline_config) ---
 
 STAGE = 2
 TARGET_COUNT = 35
 MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 5
-PARAPHRASE_PROMPT = "paraphrase.txt"
-
-
-def _sampling_for_source_count(sampling_params, source_count: int):
-    params = copy.copy(sampling_params)
-    if source_count <= 6:
-        params.temperature = 0.9
-        print(f"  Малое число источников ({source_count}) — "
-              f"повышаю температуру парафраза до {params.temperature:.2f}")
-    return params
-
-
-def build_paraphrase_prompt(template: str, original_text: str, class_name: str) -> str:
-    """Собирает промпт для перефразирования одного текста."""
-    return template.format(
-        original_text=original_text,
-        class_name=class_name,
-    )
+RUT5_JUDGE_MIN_SCORE = 4.5
 
 
 def augment_class(
     class_name: str,
     existing_texts: list[str],
     n_needed: int,
-    llm,
-    sampling_params,
-    prompt_template: str,
-    system_prompt: str | None = None,
+    paraphraser: RuT5Paraphraser,
     n_original: int | None = None,
     paraphrase_sources: list[str] | None = None,
-) -> list[str]:
+) -> list[tuple[str, str]]:
     """
-    Генерирует парафразы для одного класса батчами.
+    Builds a validated candidate pool for one class.
 
-    Схема: берём оригиналы по кругу → генерируем 3x с запасом →
-    валидация → LLM-судья → берём лучшие. Повторяем если мало.
-
-    Параметры:
-        existing_texts:     все тексты класса (для дедупликации/валидации)
-        paraphrase_sources: тексты-источники для парафраза. Если None —
-                            используется existing_texts (legacy: каскад через
-                            синтетику этапа 1). Если задано (например, оригиналы
-                            из train_after_eda.csv) — каждый парафраз отстоит
-                            от реального текста ровно на 1 LLM-операцию.
+    Returns pairs: (paraphrase, source_original). LLM-judge selection happens
+    after ruT5 is unloaded, so that vLLM has GPU memory available.
     """
-    all_valid_texts = []
+    candidate_pairs: list[tuple[str, str]] = []
     current_existing = list(existing_texts)
 
-    # По умолчанию — legacy (источник = всё, что есть, включая синтетику stage 1).
-    # Передаём paraphrase_sources, чтобы фиксить каскадирование.
     if paraphrase_sources is None:
         paraphrase_sources = existing_texts
-    class_sampling_params = _sampling_for_source_count(sampling_params, len(paraphrase_sources))
 
     for attempt in range(1, MAX_RETRIES + 1):
-        still_needed = n_needed - len(all_valid_texts)
-        if still_needed <= 0:
+        pool_target = max(n_needed * 2, n_needed)
+        if len(candidate_pairs) >= pool_target:
             break
 
-        batch_size = int(still_needed * OVERSAMPLE_FACTOR) + 1
-        print(f"  [Раунд {attempt}/{MAX_RETRIES}] Нужно ещё {still_needed}, "
-              f"генерируем батч из {batch_size} парафразов")
-
-        # выбираем оригиналы равномерно по кругу — что бы не перефразировать один и тот же 10 раз
+        pool_gap = pool_target - len(candidate_pairs)
+        batch_size = max(pool_gap, 1) * OVERSAMPLE_FACTOR + 1
         sources = _select_sources(paraphrase_sources, batch_size)
 
-        # собираем промпты
-        prompts = [
-            build_paraphrase_prompt(prompt_template, source, class_name)
-            for source in sources
-        ]
+        print(f"  [Раунд {attempt}/{MAX_RETRIES}] Нужно в пул ещё {pool_gap}, "
+              f"генерируем {len(sources)} ruT5-парафразов")
 
-        # всё на GPU одним батчем
-        raw_outputs = generate_batch(llm, class_sampling_params, prompts, system_prompt=system_prompt)
-
-        # убираем пустые, но сохраняем связь парафраз → оригинал
+        raw_outputs = paraphraser.paraphrase_texts(sources)
         pairs = [
             (text, source)
             for text, source in zip(raw_outputs, sources)
-            if text
+            if text and text.strip()
         ]
 
         print(f"  [Раунд {attempt}] Получено {len(pairs)} парафразов")
-
         if not pairs:
             continue
 
         paraphrased = [p[0] for p in pairs]
-        their_originals = [p[1] for p in pairs]
+        originals = [p[1] for p in pairs]
 
-        # прогрессивный порог сходства: первые 2 попытки строгий (0.95),
-        # потом каждую попытку +0.01, максимум 0.98
         sim_threshold = min(0.95 + max(0, attempt - 2) * 0.01, 0.98)
-
-        # фильтры: дубликаты, длина, язык, сходство
-        # n_original прокидываем — для маленьких классов (1 оригинал) порог мягче (0.98)
         valid = validate_generated_texts(
             paraphrased, current_existing, class_name,
             similarity_threshold=sim_threshold, n_original=n_original,
         )
         n_after_validation = len(valid)
 
-        # восстанавливаем связь — какой оригинал у каждого прошедшего фильтры
         valid_set = set(valid)
-        valid_with_originals = [
+        valid_pairs = [
             (para, orig)
-            for para, orig in zip(paraphrased, their_originals)
+            for para, orig in zip(paraphrased, originals)
             if para in valid_set
         ]
-        valid_paras = [p[0] for p in valid_with_originals]
-        valid_origs = [p[1] for p in valid_with_originals]
 
-        # LLM-судья сравнивает каждый парафраз с его конкретным оригиналом
-        valid = select_top_paraphrases(
-            valid_paras, valid_origs, class_name, llm,
-            n_needed=still_needed,
-        )
-
-        take = min(len(valid), still_needed)
-        all_valid_texts.extend(valid[:take])
-        current_existing.extend(valid[:take])
+        candidate_pairs.extend(valid_pairs)
+        current_existing.extend([p[0] for p in valid_pairs])
 
         print(f"  [Раунд {attempt}] После фильтров {n_after_validation}, "
-              f"после судьи {len(valid)}, принято {take}, "
-              f"всего {len(all_valid_texts)}/{n_needed}")
+              f"в пул +{len(valid_pairs)}, всего в пуле {len(candidate_pairs)}/{pool_target}")
 
-    if len(all_valid_texts) < n_needed:
-        print(f"  [Внимание] Класс «{class_name}»: удалось получить только "
-              f"{len(all_valid_texts)}/{n_needed} парафразов за {MAX_RETRIES} раундов")
+    if len(candidate_pairs) < n_needed:
+        print(f"  [Внимание] Класс «{class_name}»: после ruT5 и фильтров только "
+              f"{len(candidate_pairs)}/{n_needed} кандидатов")
 
-    return all_valid_texts
+    return candidate_pairs
 
 
 def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
-    """
-    Выбирает оригиналы для перефразирования равномерно по кругу.
-    Каждый оригинал используется примерно одинаковое число раз.
-    """
-    sources = []
+    """Выбирает источники равномерно по кругу."""
+    if not existing_texts:
+        return []
 
+    sources = []
     shuffled = list(existing_texts)
     random.shuffle(shuffled)
 
@@ -204,13 +141,8 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
 
 def run(config_path: str, pipeline_cfg=None) -> None:
     """Основная функция этапа 2."""
-    global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR
+    global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR, RUT5_JUDGE_MIN_SCORE
 
-    # Флаг originals_only_sources: если True (рекомендуется), парафраз берётся
-    # только из оригинальных писем (stage 0), а stage 1 используется только
-    # для дедупликации. Это устраняет каскадирование синтетики через стадии.
-    # По умолчанию True — каскад был выявлен как источник плато f1_C=0.5333
-    # в трёх независимых ранах fine-tune.
     originals_only_sources = True
 
     if pipeline_cfg is not None:
@@ -218,20 +150,20 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         TARGET_COUNT = s.target_count
         MAX_RETRIES = s.max_retries
         OVERSAMPLE_FACTOR = s.oversample_factor
-        # _DotDict наследует dict — используем .get() с default
         originals_only_sources = bool(s.get("originals_only_sources", True))
+        RUT5_JUDGE_MIN_SCORE = float(s.get("judge_min_score", RUT5_JUDGE_MIN_SCORE))
 
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     print("=" * 60)
-    print(f"ЭТАП 2: Парафраз через LLM (< {TARGET_COUNT} → {TARGET_COUNT})")
+    print(f"ЭТАП 2: ruT5-парафраз с чанкованием (< {TARGET_COUNT} → {TARGET_COUNT})")
     print(f"       источник парафраза: "
           f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
+    print(f"       LLM-judge threshold: {RUT5_JUDGE_MIN_SCORE}")
     print("=" * 60)
 
     df = load_dataset(stage=STAGE)
-
     classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
 
     if not classes_to_augment:
@@ -243,78 +175,100 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
         print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
-    # грузим LLM и конфиг
-    llm, sampling_params, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
-
-    # для парафраза берём отдельный system_prompt и шаблон из конфига
-    config = load_model_config(config_path)
-    paraphrase_template_name = config.get("paraphrase_template", PARAPHRASE_PROMPT)
-    system_prompt = config.get("paraphrase_system_prompt")
-    prompt_template = load_prompt_template(paraphrase_template_name)
-
-    # загружаем исходный датасет (до аугментации) — что бы знать реальное число оригиналов
-    # после stage1 у класса может быть 15 текстов, но реально оригиналов было 1-5
-    # это влияет на порог косинусного сходства в валидации
     df_original = load_dataset(stage=0)
     original_counts = df_original[LABEL_COL].value_counts().to_dict()
 
+    class_pools: dict[str, dict] = {}
+    paraphraser = RuT5Paraphraser.from_pipeline_config(pipeline_cfg)
+
+    try:
+        for class_idx, (class_name, current_count) in enumerate(classes_to_augment.items()):
+            n_needed = TARGET_COUNT - current_count
+            existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
+            real_original_count = original_counts.get(class_name, current_count)
+
+            if originals_only_sources:
+                paraphrase_sources = df_original[
+                    df_original[LABEL_COL] == class_name
+                ][TEXT_COL].tolist()
+                if not paraphrase_sources:
+                    print(f"  [Внимание] Нет оригиналов для «{class_name}», "
+                          f"fallback на существующие тексты (legacy режим)")
+                    paraphrase_sources = existing_texts
+            else:
+                paraphrase_sources = existing_texts
+
+            print(f"\n[Этап 2] Класс «{class_name}»: есть {current_count} "
+                  f"(из них {real_original_count} оригиналов), "
+                  f"источников: {len(paraphrase_sources)}, нужно ещё {n_needed}")
+
+            try:
+                pairs = augment_class(
+                    class_name=class_name,
+                    existing_texts=existing_texts,
+                    n_needed=n_needed,
+                    paraphraser=paraphraser,
+                    n_original=real_original_count,
+                    paraphrase_sources=paraphrase_sources,
+                )
+            except Exception as e:
+                print(f"[Этап 2] Ошибка при ruT5-парафразе класса «{class_name}»: {e}")
+                print("[Этап 2] Пропускаю класс, продолжаю с остальными")
+                continue
+
+            class_pools[class_name] = {
+                "pairs": pairs,
+                "n_needed": n_needed,
+                "class_idx": class_idx,
+            }
+    finally:
+        paraphraser.unload()
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    print("\n[Этап 2] Грузим LLM-судью для отбора ruT5-парафразов...")
+    llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
+
     new_rows = []
 
-    for class_idx, (class_name, current_count) in enumerate(classes_to_augment.items()):
-        n_needed = TARGET_COUNT - current_count
-        existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
-        real_original_count = original_counts.get(class_name, current_count)
+    try:
+        for class_name, state in class_pools.items():
+            pairs = state["pairs"]
+            n_needed = state["n_needed"]
 
-        # Источник для парафраза: только оригиналы (фикс каскадирования).
-        # Если оригиналов нет (быть не должно после EDA) — fallback на существующее.
-        if originals_only_sources:
-            paraphrase_sources = df_original[
-                df_original[LABEL_COL] == class_name
-            ][TEXT_COL].tolist()
-            if not paraphrase_sources:
-                print(f"  [Внимание] Нет оригиналов для «{class_name}», "
-                      f"fallback на существующие тексты (legacy режим)")
-                paraphrase_sources = existing_texts
-        else:
-            paraphrase_sources = existing_texts
+            if not pairs:
+                print(f"[Этап 2] Класс «{class_name}»: нет кандидатов для судьи")
+                continue
 
-        print(f"\n[Этап 2] Класс «{class_name}»: есть {current_count} "
-              f"(из них {real_original_count} оригиналов), "
-              f"источников парафраза: {len(paraphrase_sources)}, "
-              f"нужно ещё {n_needed}")
+            paras = [p[0] for p in pairs]
+            origs = [p[1] for p in pairs]
+            print(f"\n[Этап 2] Класс «{class_name}»: "
+                  f"{len(pairs)} кандидатов после ruT5, нужно {n_needed}")
 
-        try:
-            generated = augment_class(
-                class_name=class_name,
-                existing_texts=existing_texts,
-                n_needed=n_needed,
-                llm=llm,
-                sampling_params=sampling_params,
-                prompt_template=prompt_template,
-                system_prompt=system_prompt,
-                n_original=real_original_count,
-                paraphrase_sources=paraphrase_sources,
+            selected = select_top_paraphrases(
+                paras, origs, class_name, llm,
+                n_needed=n_needed, min_score=RUT5_JUDGE_MIN_SCORE,
             )
-        except Exception as e:
-            print(f"[Этап 2] Ошибка при обработке класса «{class_name}»: {e}")
-            print(f"[Этап 2] Пропускаю класс, продолжаю с остальными")
-            continue
 
-        for text in generated:
-            new_rows.append({TEXT_COL: text, LABEL_COL: class_name})
+            for text in selected:
+                new_rows.append({TEXT_COL: text, LABEL_COL: class_name})
 
-        print(f"[Этап 2] Класс «{class_name}»: добавлено {len(generated)} парафразов")
+            print(f"[Этап 2] Класс «{class_name}»: добавлено {len(selected)} парафразов")
 
-        # сохраняем после каждого класса — страховка
-        if new_rows:
-            df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-            save_checkpoint(df_tmp, stage=STAGE)
-            print(f"[Этап 2] Промежуточное сохранение: "
-                  f"{class_idx + 1} классов обработано, {len(df_tmp)} записей")
+            if new_rows:
+                df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+                save_checkpoint(df_tmp, stage=STAGE)
+                print(f"[Этап 2] Промежуточное сохранение: {len(df_tmp)} записей")
+    finally:
+        del llm
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     if new_rows:
-        new_df = pd.DataFrame(new_rows)
-        df = pd.concat([df, new_df], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
         print(f"\n[Этап 2] Всего добавлено {len(new_rows)} текстов")
     else:
         print("\n[Этап 2] Новых текстов не сгенерировано")
@@ -332,13 +286,13 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Этап 2: парафраз текстов для классов с < 35 примерами"
+        description="Этап 2: ruT5-парафраз для классов с < 35 примерами"
     )
     parser.add_argument(
         "--config",
         type=str,
         required=True,
-        help="Путь до JSON-конфига модели (например, configs/model_vllm.json)",
+        help="Путь до JSON-конфига LLM-судьи (например, configs/model_vllm.json)",
     )
     args = parser.parse_args()
 

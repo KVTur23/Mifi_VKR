@@ -6,7 +6,7 @@
       "rubert_batch_size": 16,
       "gpu_memory_utilization": 0.90,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-distilled-600M"
+      "nllb_model": "facebook/nllb-200-1.3B"
     },
     "L4": {
       "vram_gb": 24,
@@ -14,7 +14,7 @@
       "rubert_batch_size": 32,
       "gpu_memory_utilization": 0.90,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-distilled-600M"
+      "nllb_model": "facebook/nllb-200-1.3B"
     },
     "A100_40": {
       "vram_gb": 40,
@@ -22,7 +22,7 @@
       "rubert_batch_size": 64,
       "gpu_memory_utilization": 0.92,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-3.3B"
+      "nllb_model": "facebook/nllb-200-1.3B"
     },
     "A100_80": {
       "vram_gb": 80,
@@ -30,7 +30,7 @@
       "rubert_batch_size": 64,
       "gpu_memory_utilization": 0.95,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-3.3B"
+      "nllb_model": "facebook/nllb-200-1.3B"
     },
     "H100": {
       "vram_gb": 80,
@@ -38,7 +38,7 @@
       "rubert_batch_size": 64,
       "gpu_memory_utilization": 0.95,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-3.3B"
+      "nllb_model": "facebook/nllb-200-1.3B"
     }
   },
   "pipeline": {
@@ -52,14 +52,34 @@
       "target_count": 35,
       "max_retries": 5,
       "oversample_factor": 5,
-      "originals_only_sources": true
+      "originals_only_sources": true,
+      "judge_min_score": 4.5,
+      "paraphraser": {
+        "model": "fyaronskiy/ruT5-large-paraphraser",
+        "batch_size": 8,
+        "chunk_max_tokens": 420,
+        "output_length_factor": 1.5,
+        "output_max_tokens": 512,
+        "num_beams": 5,
+        "do_sample": true,
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "repetition_penalty": 1.1,
+        "encoder_no_repeat_ngram_size": 3,
+        "no_repeat_ngram_size": 3
+      }
     },
     "stage3": {
       "target_count": 50,
       "max_retries": 20,
       "oversample_factor": 3,
       "min_judge_score": 2.5,
-      "originals_only_sources": true
+      "originals_only_sources": true,
+      "translation_chunking": {
+        "chunk_max_tokens": 900,
+        "output_length_factor": 1.3,
+        "output_max_tokens": 1024
+      }
     }
   },
   "judge": {

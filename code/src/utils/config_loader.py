@@ -60,7 +60,7 @@ def load_model_config(config_path: str) -> dict:
         prompt_template = str(project_root / "prompts" / "aug_prompts" / prompt_template)
 
     # Возвращаем весь конфиг целиком — разные этапы могут использовать
-    # свои дополнительные поля (system_prompt, use_unsloth, paraphrase_template и т.д.),
+    # свои дополнительные поля (system_prompt, use_unsloth, max_seq_length и т.д.),
     config["prompt_template"] = prompt_template
     return config
 

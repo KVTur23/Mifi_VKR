@@ -20,7 +20,6 @@ code/
 ├── prompts/
 │   ├── aug_prompts/                     # Промпты для аугментации
 │   │   ├── llm_generate_one.txt         #   Генерация одного письма (этап 1)
-│   │   ├── paraphrase.txt               #   Парафраз (этап 2)
 │   │   ├── class_context.txt            #   Описание класса для промпта
 │   │   ├── judge_score.txt              #   LLM-судья: оценка генерации
 │   │   └── judge_paraphrase.txt         #   LLM-судья: оценка парафраза
@@ -32,8 +31,10 @@ code/
 ├── src/
 │   ├── augmentation/
 │   │   ├── stage1_llm_generate.py       #   Этап 1: LLM-генерация (< 15 → 15)
-│   │   ├── stage2_paraphrase.py         #   Этап 2: парафраз через LLM (< 35 → 35)
-│   │   ├── stage3_back_translation.py   #   Этап 3: обратный перевод (< 50 → 50)
+│   │   ├── stage2_paraphrase.py         #   Этап 2: ruT5-парафраз (< 35 → 35)
+│   │   ├── stage3_back_translation.py   #   Этап 3: chunked back-translation (< 50 → 50)
+│   │   ├── rut5_paraphraser.py          #   ruT5-large paraphraser + chunking
+│   │   ├── text_chunking.py             #   tokenizer-aware разбиение длинных писем
 │   │   ├── validation.py                #   Фильтры для сгенерированных текстов
 │   │   └── llm_utils.py                 #   Обёртка vLLM + LLM-as-a-judge
 │   ├── classification/
@@ -85,8 +86,8 @@ code/
 | Группа | Примеров | Цель | Метод |
 |--------|----------|------|-------|
 | A | < 15 | 15 | LLM-генерация через vLLM |
-| B | 15–34 | 35 | Парафраз через LLM |
-| C | 35–49 | 50 | Обратный перевод (NLLB-200) |
+| B | 15–34 | 35 | ruT5-парафраз с чанкованием |
+| C | 35–49 | 50 | Chunked back-translation (NLLB-200) |
 | D | ≥ 50 | — | не трогаем |
 
 Группы пересчитываются после каждого этапа: класс из A, доведённый до 15, попадает в B и участвует в этапе 2.
@@ -154,7 +155,7 @@ GPU = "A100"  # варианты: "T4", "L4", "A100", "H100"
 
 | Параметр | T4 (16GB) | L4 (24GB) | A100 (80GB) | H100 (80GB) |
 |----------|-----------|-----------|-------------|-------------|
-| NLLB модель | 600M | 3.3B | 3.3B | 3.3B |
+| NLLB модель | 1.3B | 1.3B | 1.3B | 1.3B |
 | NLLB batch | 32 | 32 | 64 | 64 |
 | GPU memory | 0.90 | 0.90 | 0.95 | 0.95 |
 | enforce_eager | true | true | true | true |
@@ -170,8 +171,9 @@ GPU = "A100"  # варианты: "T4", "L4", "A100", "H100"
 - `model_name` — модель с HuggingFace (AWQ-квантизация для vLLM)
 - `generation_params` — temperature, top_p, top_k, max_new_tokens
 - `prompt_template` — шаблон промпта из `prompts/aug_prompts/`
-- `system_prompt` / `paraphrase_system_prompt` — системные промпты для этапов 1 и 2
-- `paraphrase_template` — шаблон промпта для этапа 2
+- `system_prompt` — системный промпт для генерации на этапе 1
+
+Параметры ruT5-парафраза и NLLB-чанкования теперь задаются в `pipeline_config.json`.
 
 ---
 

@@ -12,12 +12,11 @@ import re
 import sys
 import random
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 from src.utils.config_loader import load_model_config, load_prompt
-
-from vllm import LLM, SamplingParams
 
 
 def load_llm(config_path: str, pipeline_cfg=None) -> tuple:
@@ -40,6 +39,8 @@ def load_llm(config_path: str, pipeline_cfg=None) -> tuple:
 
     print(f"[LLM] Загружаю модель через vLLM: {model_name}")
 
+    from vllm import LLM
+
     # если в названии модели есть "awq" — vllm автоматом распаковывает квантизованные веса
     quantization = config.get("quantization", "awq" if "awq" in model_name.lower() else None)
 
@@ -52,7 +53,7 @@ def load_llm(config_path: str, pipeline_cfg=None) -> tuple:
         enforce_eager=eager,
     )
 
-    sampling_params = SamplingParams(
+    sampling_params = _make_sampling_params(
         temperature=gen_params.get("temperature", 0.7),
         top_p=gen_params.get("top_p", 0.9),
         top_k=gen_params.get("top_k", 50),
@@ -66,8 +67,8 @@ def load_llm(config_path: str, pipeline_cfg=None) -> tuple:
 
 
 def generate_text(
-    llm: LLM,
-    sampling_params: SamplingParams,
+    llm: Any,
+    sampling_params: Any,
     prompt: str,
     system_prompt: str | None = None,
 ) -> str | None:
@@ -77,8 +78,8 @@ def generate_text(
 
 
 def generate_batch(
-    llm: LLM,
-    sampling_params: SamplingParams,
+    llm: Any,
+    sampling_params: Any,
     prompts: list[str],
     system_prompt: str | None = None,
 ) -> list[str | None]:
@@ -138,7 +139,7 @@ MAX_JUDGE_EXAMPLES = 5  # сколько оригиналов показывае
 def score_texts_batch(
     texts: list[str],
     class_name: str,
-    llm: LLM,
+    llm: Any,
     existing_texts: list[str] | None = None,
     context: str = "",
 ) -> list[tuple[str, float]]:
@@ -153,7 +154,7 @@ def score_texts_batch(
         return []
 
     judge_template = load_prompt_template(JUDGE_PROMPT)
-    judge_sp = SamplingParams(**_JUDGE_SAMPLING)
+    judge_sp = _make_sampling_params(**_JUDGE_SAMPLING)
 
     # берём 5 случайных оригиналов для сравнения
     examples_text = ""
@@ -189,7 +190,7 @@ def score_texts_batch(
 def select_top_half(
     texts: list[str],
     class_name: str,
-    llm: LLM,
+    llm: Any,
     n_needed: int,
     existing_texts: list[str] | None = None,
     context: str = "",
@@ -233,7 +234,7 @@ def select_top_paraphrases(
     paraphrases: list[str],
     originals: list[str],
     class_name: str,
-    llm: LLM,
+    llm: Any,
     n_needed: int,
     min_score: float | None = None,
 ) -> list[str]:
@@ -253,7 +254,7 @@ def select_top_paraphrases(
     print(f"  [Судья] Оцениваю {len(paraphrases)} парафразов для «{class_name}»...")
 
     judge_template = load_prompt_template(JUDGE_PARAPHRASE_PROMPT)
-    judge_sp = SamplingParams(**_JUDGE_SAMPLING)
+    judge_sp = _make_sampling_params(**_JUDGE_SAMPLING)
 
     # каждый парафраз оцениваем рядом с его оригиналом
     prompts = [
@@ -296,6 +297,11 @@ def _parse_score(raw: str | None) -> float:
     if match:
         return float(match.group(1))
     return 0
+
+
+def _make_sampling_params(**kwargs):
+    from vllm import SamplingParams
+    return SamplingParams(**kwargs)
 
 
 def load_prompt_template(template_name: str) -> str:

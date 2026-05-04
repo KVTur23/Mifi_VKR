@@ -21,7 +21,6 @@ code/
 ├── prompts/
 │   └── aug_prompts/                      # Шаблоны промптов
 │       ├── llm_generate_one.txt          # Генерация нового письма
-│       ├── paraphrase.txt                # Перефразирование
 │       ├── class_context.txt             # Автоописание класса
 │       ├── judge_score.txt               # Оценка сгенерированных писем
 │       └── judge_paraphrase.txt          # Оценка перефразировок/переводов
@@ -30,8 +29,10 @@ code/
 │   │   ├── __init__.py
 │   │   ├── llm_utils.py                  # Обёртка над vLLM + LLM-судья
 │   │   ├── stage1_llm_generate.py        # Этап 1: генерация LLM
-│   │   ├── stage2_paraphrase.py          # Этап 2: перефразирование
-│   │   ├── stage3_back_translation.py    # Этап 3: обратный перевод
+│   │   ├── stage2_paraphrase.py          # Этап 2: ruT5-парафраз
+│   │   ├── stage3_back_translation.py    # Этап 3: chunked обратный перевод
+│   │   ├── rut5_paraphraser.py           # ruT5-large paraphraser
+│   │   ├── text_chunking.py              # tokenizer-aware chunking
 │   │   └── validation.py                 # 7 фильтров валидации
 │   ├── classification/                   # Модули классификации
 │   │   ├── __init__.py
@@ -118,55 +119,56 @@ code/
 
 ---
 
-### `src/augmentation/stage2_paraphrase.py` — Этап 2: Перефразирование
+### `src/augmentation/stage2_paraphrase.py` — Этап 2: ruT5-парафраз
 
-Перефразирует существующие тексты для классов с 15–34 примерами, доводя до 35.
+Перефразирует оригинальные тексты для классов с 15–34 примерами, доводя до 35.
+Использует `fyaronskiy/ruT5-large-paraphraser`; длинные письма режутся на
+tokenizer-aware чанки и собираются обратно перед валидацией.
 
 **Константы:**
 - `STAGE = 2`
 - `TARGET_COUNT = 35`
 - `MAX_RETRIES = 5`
 - `OVERSAMPLE_FACTOR = 5`
-- `PARAPHRASE_PROMPT = "paraphrase.txt"`
+- `RUT5_JUDGE_MIN_SCORE = 4.5`
 
 **Функции:**
 
 | Функция | Описание |
 |---------|----------|
-| `build_paraphrase_prompt(template, original_text, class_name)` | Формирует промпт для перефразирования: подставляет оригинальный текст и название класса в шаблон. |
 | `_select_sources(existing_texts, n_needed)` | Выбирает оригиналы для перефразирования round-robin: каждый оригинал используется примерно одинаковое количество раз. |
-| `augment_class(class_name, existing_texts, n_needed, llm, sampling_params, prompt_template, system_prompt=None, n_original=None)` | Многораундовое перефразирование. Поддерживает пары «оригинал ↔ перефразировка» для судьи. Прогрессивный порог сходства: 0.95 → 0.98. LLM-судья сравнивает каждую перефразировку с её оригиналом (порог 5.0). |
-| `run(config_path, pipeline_cfg=None)` | Точка входа. Загружает результат этапа 1, определяет классы с 15–34 примерами, загружает `paraphrase_template` и `paraphrase_system_prompt` из конфига модели. Получает количество оригинальных примеров (из stage 0) для мягкого порога сходства (0.98 для классов с 1 оригиналом). |
+| `augment_class(class_name, existing_texts, n_needed, paraphraser, n_original=None, paraphrase_sources=None)` | Набирает валидированный пул ruT5-парафразов. Прогрессивный порог сходства: 0.95 → 0.98. |
+| `run(config_path, pipeline_cfg=None)` | Точка входа. Сначала грузит ruT5 и собирает пулы кандидатов, затем выгружает ruT5, грузит vLLM-судью и отбирает лучшие пары с порогом 4.5. |
 
 ---
 
 ### `src/augmentation/stage3_back_translation.py` — Этап 3: Обратный перевод
 
-Обратный перевод (RU → EN → RU) через NLLB-200 для классов с 35–49 примерами, доводит до 50. Двухфазная архитектура: сначала перевод + валидация, затем LLM-судья.
+Обратный перевод (RU → pivot → RU) через NLLB-200 для классов с 35–49 примерами, доводит до 50. Двухфазная архитектура: сначала chunked перевод + валидация, затем LLM-судья.
 
 **Константы:**
 - `STAGE = 3`
 - `TARGET_COUNT = 50`
 - `MAX_RETRIES = 20`
-- `MODEL_NLLB = "facebook/nllb-200-3.3B"` — модель перевода
+- `MODEL_NLLB = "facebook/nllb-200-1.3B"` — модель перевода
 - `BATCH_SIZE = 64` — размер батча NLLB
 - `OVERSAMPLE_FACTOR = 3`
 - `MIN_JUDGE_SCORE_STAGE3 = 2.5` — порог судьи (ниже чем на этапах 1–2)
 - `LANG_RU = "rus_Cyrl"`, `LANG_EN = "eng_Latn"` — коды языков
-- `MAX_LENGTH = 512` — максимальная длина перевода
+- `TRANSLATION_CHUNK_MAX_TOKENS = 900` — максимальная длина чанка
+- `TRANSLATION_OUTPUT_MAX_TOKENS = 1024` — максимум токенов выхода на чанк
 - `_PAIRS_CSV = DATA_DIR / "_stage3_pairs_cache.csv"` — промежуточный кэш пар
 
 **Функции:**
 
 | Функция | Описание |
 |---------|----------|
-| `mask_placeholders(text)` | Маскирует NER-плейсхолдеры (`[PERSON]`, `[ORGANIZATION]`, `[DATE_TIME]` и т.п.) → `<0>`, `<1>`, `<2>`. NLLB-200 не портит короткие теги. Возвращает `(masked_text, placeholders_list)`. |
-| `unmask_placeholders(text, placeholders)` | Восстанавливает оригинальные плейсхолдеры из `<0>`, `<1>`, ... |
 | `load_translation_models()` | Загружает NLLB-200 (размер зависит от GPU-профиля). Возвращает `(model, tokenizer, device)`. |
 | `unload_from_gpu(*objects)` | Выгружает модели из GPU, вызывает `gc.collect()` и `torch.cuda.empty_cache()`. |
 | `load_sbert_on_gpu()` | Загружает SBERT (`ai-forever/sbert_large_nlu_ru`) для валидации. |
-| `translate_batch(texts, model, tokenizer, src_lang, tgt_lang, device)` | Батчевый перевод через NLLB: `do_sample=True`, `temperature=1.2`, `top_p=0.9` для разнообразия переводов. |
-| `back_translate(texts, model, tokenizer, device)` | Пайплайн RU → EN → RU: маскирует плейсхолдеры → переводит на английский → переводит обратно → восстанавливает плейсхолдеры. |
+| `translate_batch(texts, input_token_counts, model, tokenizer, src_lang, tgt_lang, device)` | Батчевый перевод чанков через NLLB без truncation. |
+| `translate_texts_chunked(texts, model, tokenizer, src_lang, tgt_lang, device)` | Разбивает полные письма на tokenizer-aware чанки, переводит и собирает обратно. |
+| `back_translate(texts, model, tokenizer, device)` | Пайплайн RU → pivot → RU через chunked перевод. Плейсхолдеры не маскируются и не проверяются. |
 | `select_sources(existing_texts, n_needed)` | Round-robin выбор оригиналов для перевода. |
 | `run(config_path, pipeline_cfg=None)` | Точка входа, двухфазная обработка (см. ниже). |
 
@@ -176,7 +178,7 @@ code/
 1. Загрузить NLLB-200 и SBERT
 2. Для каждого класса с 35–49 примерами:
    - Выбрать оригиналы round-robin
-   - Перевести RU → EN → RU (с маскированием плейсхолдеров)
+   - Перевести RU → pivot → RU через чанки
    - Прогнать через 7 фильтров валидации
    - Собрать ВСЕ прошедшие пары (без ограничения пула), но остановить перевод при 2× n_needed
    - Повторять до `MAX_RETRIES` (20) раз
@@ -390,11 +392,11 @@ code/
 
 | Профиль | VRAM | NLLB Batch | RuBERT Batch | Memory Util | enforce_eager | NLLB-модель |
 |---------|------|-----------|-------------|-------------|---------------|-------------|
-| T4 | 16 ГБ | 32 | 16 | 0.90 | true | nllb-200-distilled-600M |
-| L4 | 24 ГБ | 32 | 32 | 0.90 | true | nllb-200-3.3B |
-| A100_40 | 40 ГБ | 64 | 64 | 0.92 | false | nllb-200-3.3B |
-| A100_80 | 80 ГБ | 64 | 64 | 0.95 | false | nllb-200-3.3B |
-| H100 | 80 ГБ | 64 | 64 | 0.95 | false | nllb-200-3.3B |
+| T4 | 16 ГБ | 32 | 16 | 0.90 | true | nllb-200-1.3B |
+| L4 | 24 ГБ | 32 | 32 | 0.90 | true | nllb-200-1.3B |
+| A100_40 | 40 ГБ | 64 | 64 | 0.92 | true | nllb-200-1.3B |
+| A100_80 | 80 ГБ | 64 | 64 | 0.95 | true | nllb-200-1.3B |
+| H100 | 80 ГБ | 64 | 64 | 0.95 | true | nllb-200-1.3B |
 
 **Настройки пайплайна по этапам:**
 
@@ -411,7 +413,6 @@ code/
 - `model_name` — HuggingFace идентификатор модели
 - `max_seq_length` — максимальная длина контекста
 - `system_prompt` — системный промпт для генерации
-- `paraphrase_system_prompt` — системный промпт для перефразирования
 - `generation_params` — параметры генерации (temperature, top_p, top_k, max_new_tokens, repetition_penalty)
 
 ---
@@ -421,7 +422,6 @@ code/
 | Файл | Назначение |
 |------|-----------|
 | `llm_generate_one.txt` | Этап 1: промпт для генерации нового письма. Включает название класса, его описание и примеры реальных писем. |
-| `paraphrase.txt` | Этап 2: промпт для перефразирования. Включает название класса и оригинальный текст. |
 | `class_context.txt` | Автогенерация описания класса: LLM анализирует примеры и описывает тему, стиль, структуру и характерные формулировки. |
 | `judge_score.txt` | Оценка сгенерированных писем (1–10). Критерии: естественность, связность, соответствие классу, полнота. |
 | `judge_paraphrase.txt` | Оценка перефразировок и переводов (1–10). Критерии: сохранение смысла, реальность переформулировки, естественность, полнота. |
