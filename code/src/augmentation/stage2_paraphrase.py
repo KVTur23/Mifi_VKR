@@ -39,6 +39,16 @@ TARGET_COUNT = 35
 MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 5
 RUT5_JUDGE_MIN_SCORE = 4.5
+RUT5_MIN_TEXT_LENGTH = 250
+RUT5_MIN_LENGTH_RATIO = 0.35
+RUT5_APPLY_PROMPT_LEAK_FILTER = False
+POST_JUDGE_RETRIES = 3
+FINAL_FILL_BELOW_THRESHOLD = True
+SMALL_CLASS_SOURCE_THRESHOLD = 6
+SMALL_CLASS_TEMPERATURE = 0.95
+TEMPERATURE_INCREASE_AFTER_ATTEMPT = 3
+TEMPERATURE_STEP = 0.05
+MAX_TEMPERATURE = 1.10
 
 
 def augment_class(
@@ -48,6 +58,7 @@ def augment_class(
     paraphraser: RuT5Paraphraser,
     n_original: int | None = None,
     paraphrase_sources: list[str] | None = None,
+    generation_attempt_offset: int = 0,
 ) -> list[tuple[str, str]]:
     """
     Builds a validated candidate pool for one class.
@@ -62,6 +73,7 @@ def augment_class(
         paraphrase_sources = existing_texts
 
     for attempt in range(1, MAX_RETRIES + 1):
+        global_attempt = generation_attempt_offset + attempt
         pool_target = max(n_needed * 2, n_needed)
         if len(candidate_pairs) >= pool_target:
             break
@@ -69,11 +81,17 @@ def augment_class(
         pool_gap = pool_target - len(candidate_pairs)
         batch_size = max(pool_gap, 1) * OVERSAMPLE_FACTOR + 1
         sources = _select_sources(paraphrase_sources, batch_size)
+        temperature = _temperature_for_attempt(
+            base_temperature=paraphraser.cfg.temperature,
+            source_count=len(paraphrase_sources),
+            attempt=global_attempt,
+        )
 
         print(f"  [Раунд {attempt}/{MAX_RETRIES}] Нужно в пул ещё {pool_gap}, "
-              f"генерируем {len(sources)} ruT5-парафразов")
+              f"генерируем {len(sources)} ruT5-парафразов, "
+              f"global_attempt={global_attempt}, temperature={temperature:.2f}")
 
-        raw_outputs = paraphraser.paraphrase_texts(sources)
+        raw_outputs = paraphraser.paraphrase_texts(sources, temperature=temperature)
         pairs = [
             (text, source)
             for text, source in zip(raw_outputs, sources)
@@ -91,6 +109,10 @@ def augment_class(
         valid = validate_generated_texts(
             paraphrased, current_existing, class_name,
             similarity_threshold=sim_threshold, n_original=n_original,
+            min_length=RUT5_MIN_TEXT_LENGTH,
+            source_texts=originals,
+            min_length_ratio=RUT5_MIN_LENGTH_RATIO,
+            apply_prompt_leak_filter=RUT5_APPLY_PROMPT_LEAK_FILTER,
         )
         n_after_validation = len(valid)
 
@@ -112,6 +134,22 @@ def augment_class(
               f"{len(candidate_pairs)}/{n_needed} кандидатов")
 
     return candidate_pairs
+
+
+def _temperature_for_attempt(
+    base_temperature: float,
+    source_count: int,
+    attempt: int,
+) -> float:
+    temperature = base_temperature
+    if source_count <= SMALL_CLASS_SOURCE_THRESHOLD:
+        temperature = max(temperature, SMALL_CLASS_TEMPERATURE)
+
+    if attempt >= TEMPERATURE_INCREASE_AFTER_ATTEMPT:
+        extra_steps = attempt - TEMPERATURE_INCREASE_AFTER_ATTEMPT + 1
+        temperature += extra_steps * TEMPERATURE_STEP
+
+    return min(temperature, MAX_TEMPERATURE)
 
 
 def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
@@ -142,6 +180,10 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
 def run(config_path: str, pipeline_cfg=None) -> None:
     """Основная функция этапа 2."""
     global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR, RUT5_JUDGE_MIN_SCORE
+    global RUT5_MIN_TEXT_LENGTH, RUT5_MIN_LENGTH_RATIO, RUT5_APPLY_PROMPT_LEAK_FILTER
+    global POST_JUDGE_RETRIES, FINAL_FILL_BELOW_THRESHOLD
+    global SMALL_CLASS_SOURCE_THRESHOLD, SMALL_CLASS_TEMPERATURE
+    global TEMPERATURE_INCREASE_AFTER_ATTEMPT, TEMPERATURE_STEP, MAX_TEMPERATURE
 
     originals_only_sources = True
 
@@ -152,6 +194,27 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         OVERSAMPLE_FACTOR = s.oversample_factor
         originals_only_sources = bool(s.get("originals_only_sources", True))
         RUT5_JUDGE_MIN_SCORE = float(s.get("judge_min_score", RUT5_JUDGE_MIN_SCORE))
+        RUT5_MIN_TEXT_LENGTH = int(s.get("validation_min_text_length", RUT5_MIN_TEXT_LENGTH))
+        RUT5_MIN_LENGTH_RATIO = float(s.get("validation_min_length_ratio", RUT5_MIN_LENGTH_RATIO))
+        RUT5_APPLY_PROMPT_LEAK_FILTER = bool(
+            s.get("apply_prompt_leak_filter", RUT5_APPLY_PROMPT_LEAK_FILTER)
+        )
+        POST_JUDGE_RETRIES = int(s.get("post_judge_retries", POST_JUDGE_RETRIES))
+        FINAL_FILL_BELOW_THRESHOLD = bool(
+            s.get("final_fill_below_threshold", FINAL_FILL_BELOW_THRESHOLD)
+        )
+        p = s.get("paraphraser", {})
+        SMALL_CLASS_SOURCE_THRESHOLD = int(
+            p.get("small_class_source_threshold", SMALL_CLASS_SOURCE_THRESHOLD)
+        )
+        SMALL_CLASS_TEMPERATURE = float(
+            p.get("small_class_temperature", SMALL_CLASS_TEMPERATURE)
+        )
+        TEMPERATURE_INCREASE_AFTER_ATTEMPT = int(
+            p.get("temperature_increase_after_attempt", TEMPERATURE_INCREASE_AFTER_ATTEMPT)
+        )
+        TEMPERATURE_STEP = float(p.get("temperature_step", TEMPERATURE_STEP))
+        MAX_TEMPERATURE = float(p.get("max_temperature", MAX_TEMPERATURE))
 
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
@@ -161,6 +224,14 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     print(f"       источник парафраза: "
           f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
     print(f"       LLM-judge threshold: {RUT5_JUDGE_MIN_SCORE}")
+    print(f"       validation length: min={RUT5_MIN_TEXT_LENGTH}, "
+          f"ratio={RUT5_MIN_LENGTH_RATIO}, "
+          f"prompt_leak_filter={RUT5_APPLY_PROMPT_LEAK_FILTER}")
+    print(f"       post-judge retries: {POST_JUDGE_RETRIES}, "
+          f"final fill below threshold: {FINAL_FILL_BELOW_THRESHOLD}")
+    print(f"       temperature: small≤{SMALL_CLASS_SOURCE_THRESHOLD} → {SMALL_CLASS_TEMPERATURE}, "
+          f"after attempt {TEMPERATURE_INCREASE_AFTER_ATTEMPT} +{TEMPERATURE_STEP}, "
+          f"max {MAX_TEMPERATURE}")
     print("=" * 60)
 
     df = load_dataset(stage=STAGE)
@@ -178,101 +249,143 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     df_original = load_dataset(stage=0)
     original_counts = df_original[LABEL_COL].value_counts().to_dict()
 
-    class_pools: dict[str, dict] = {}
-    paraphraser = RuT5Paraphraser.from_pipeline_config(pipeline_cfg)
+    total_added = 0
+    total_cycles = POST_JUDGE_RETRIES + 1
 
-    try:
-        for class_idx, (class_name, current_count) in enumerate(classes_to_augment.items()):
-            n_needed = TARGET_COUNT - current_count
-            existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
-            real_original_count = original_counts.get(class_name, current_count)
+    for cycle in range(1, total_cycles + 1):
+        classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
+        if not classes_to_augment:
+            print("\n[Этап 2] Все классы уже имеют >= 35 примеров")
+            break
 
-            if originals_only_sources:
-                paraphrase_sources = df_original[
-                    df_original[LABEL_COL] == class_name
-                ][TEXT_COL].tolist()
-                if not paraphrase_sources:
-                    print(f"  [Внимание] Нет оригиналов для «{class_name}», "
-                          f"fallback на существующие тексты (legacy режим)")
+        is_final_cycle = cycle == total_cycles
+        print("\n" + "-" * 60)
+        print(f"[Этап 2] Цикл добора {cycle}/{total_cycles}: "
+              f"{len(classes_to_augment)} классов ещё < {TARGET_COUNT}")
+        print("-" * 60)
+        for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
+            print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
+
+        class_pools: dict[str, dict] = {}
+        paraphraser = RuT5Paraphraser.from_pipeline_config(pipeline_cfg)
+
+        try:
+            for class_name, current_count in classes_to_augment.items():
+                n_needed = TARGET_COUNT - current_count
+                existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
+                real_original_count = original_counts.get(class_name, current_count)
+
+                if originals_only_sources:
+                    paraphrase_sources = df_original[
+                        df_original[LABEL_COL] == class_name
+                    ][TEXT_COL].tolist()
+                    if not paraphrase_sources:
+                        print(f"  [Внимание] Нет оригиналов для «{class_name}», "
+                              f"fallback на существующие тексты (legacy режим)")
+                        paraphrase_sources = existing_texts
+                else:
                     paraphrase_sources = existing_texts
-            else:
-                paraphrase_sources = existing_texts
 
-            print(f"\n[Этап 2] Класс «{class_name}»: есть {current_count} "
-                  f"(из них {real_original_count} оригиналов), "
-                  f"источников: {len(paraphrase_sources)}, нужно ещё {n_needed}")
+                print(f"\n[Этап 2] Класс «{class_name}»: есть {current_count} "
+                      f"(из них {real_original_count} оригиналов), "
+                      f"источников: {len(paraphrase_sources)}, нужно ещё {n_needed}")
 
-            try:
-                pairs = augment_class(
-                    class_name=class_name,
-                    existing_texts=existing_texts,
-                    n_needed=n_needed,
-                    paraphraser=paraphraser,
-                    n_original=real_original_count,
-                    paraphrase_sources=paraphrase_sources,
-                )
-            except Exception as e:
-                print(f"[Этап 2] Ошибка при ruT5-парафразе класса «{class_name}»: {e}")
-                print("[Этап 2] Пропускаю класс, продолжаю с остальными")
-                continue
+                try:
+                    pairs = augment_class(
+                        class_name=class_name,
+                        existing_texts=existing_texts,
+                        n_needed=n_needed,
+                        paraphraser=paraphraser,
+                        n_original=real_original_count,
+                        paraphrase_sources=paraphrase_sources,
+                        generation_attempt_offset=(cycle - 1) * MAX_RETRIES,
+                    )
+                except Exception as e:
+                    print(f"[Этап 2] Ошибка при ruT5-парафразе класса «{class_name}»: {e}")
+                    print("[Этап 2] Пропускаю класс, продолжаю с остальными")
+                    continue
 
-            class_pools[class_name] = {
-                "pairs": pairs,
-                "n_needed": n_needed,
-                "class_idx": class_idx,
-            }
-    finally:
-        paraphraser.unload()
+                class_pools[class_name] = {
+                    "pairs": pairs,
+                    "n_needed": n_needed,
+                }
+        finally:
+            paraphraser.unload()
 
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    print("\n[Этап 2] Грузим LLM-судью для отбора ruT5-парафразов...")
-    llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
-
-    new_rows = []
-
-    try:
-        for class_name, state in class_pools.items():
-            pairs = state["pairs"]
-            n_needed = state["n_needed"]
-
-            if not pairs:
-                print(f"[Этап 2] Класс «{class_name}»: нет кандидатов для судьи")
-                continue
-
-            paras = [p[0] for p in pairs]
-            origs = [p[1] for p in pairs]
-            print(f"\n[Этап 2] Класс «{class_name}»: "
-                  f"{len(pairs)} кандидатов после ruT5, нужно {n_needed}")
-
-            selected = select_top_paraphrases(
-                paras, origs, class_name, llm,
-                n_needed=n_needed, min_score=RUT5_JUDGE_MIN_SCORE,
-            )
-
-            for text in selected:
-                new_rows.append({TEXT_COL: text, LABEL_COL: class_name})
-
-            print(f"[Этап 2] Класс «{class_name}»: добавлено {len(selected)} парафразов")
-
-            if new_rows:
-                df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-                save_checkpoint(df_tmp, stage=STAGE)
-                print(f"[Этап 2] Промежуточное сохранение: {len(df_tmp)} записей")
-    finally:
-        del llm
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    if new_rows:
-        df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-        print(f"\n[Этап 2] Всего добавлено {len(new_rows)} текстов")
-    else:
-        print("\n[Этап 2] Новых текстов не сгенерировано")
+        if not class_pools:
+            print("[Этап 2] В этом цикле нет кандидатов для судьи")
+            continue
 
+        print("\n[Этап 2] Грузим LLM-судью для отбора ruT5-парафразов...")
+        llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
+
+        cycle_added = 0
+        try:
+            for class_name, state in class_pools.items():
+                current_count = len(df[df[LABEL_COL] == class_name])
+                n_needed = TARGET_COUNT - current_count
+                if n_needed <= 0:
+                    continue
+
+                pairs = state["pairs"]
+                if not pairs:
+                    print(f"[Этап 2] Класс «{class_name}»: нет кандидатов для судьи")
+                    continue
+
+                paras = [p[0] for p in pairs]
+                origs = [p[1] for p in pairs]
+                fill_to_n = is_final_cycle and FINAL_FILL_BELOW_THRESHOLD
+
+                print(f"\n[Этап 2] Класс «{class_name}»: "
+                      f"{len(pairs)} кандидатов после ruT5, нужно {n_needed}, "
+                      f"final_fill={fill_to_n}")
+
+                selected = select_top_paraphrases(
+                    paras, origs, class_name, llm,
+                    n_needed=n_needed,
+                    min_score=RUT5_JUDGE_MIN_SCORE,
+                    fill_to_n=fill_to_n,
+                )
+
+                if not selected:
+                    print(f"[Этап 2] Класс «{class_name}»: судья ничего не принял")
+                    continue
+
+                df = pd.concat(
+                    [df, pd.DataFrame([{TEXT_COL: text, LABEL_COL: class_name} for text in selected])],
+                    ignore_index=True,
+                )
+                cycle_added += len(selected)
+                total_added += len(selected)
+
+                print(f"[Этап 2] Класс «{class_name}»: добавлено {len(selected)} парафразов, "
+                      f"теперь {len(df[df[LABEL_COL] == class_name])}/{TARGET_COUNT}")
+                save_checkpoint(df, stage=STAGE)
+                print(f"[Этап 2] Промежуточное сохранение: {len(df)} записей")
+        finally:
+            del llm
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        if cycle_added == 0:
+            print(f"[Этап 2] Цикл {cycle}: новых текстов не добавлено")
+        else:
+            print(f"[Этап 2] Цикл {cycle}: добавлено {cycle_added} текстов")
+
+    remaining = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
+    if remaining:
+        print(f"\n[Этап 2][Внимание] После всех циклов остались классы < {TARGET_COUNT}:")
+        for name, count in sorted(remaining.items(), key=lambda x: x[1]):
+            print(f"  «{name}»: {count} → не хватает {TARGET_COUNT - count}")
+    else:
+        print(f"\n[Этап 2] Цель достигнута: все классы >= {TARGET_COUNT}")
+
+    print(f"\n[Этап 2] Всего добавлено {total_added} текстов")
     save_checkpoint(df, stage=STAGE)
 
     print(f"\n[Этап 2] Итоговое распределение:")

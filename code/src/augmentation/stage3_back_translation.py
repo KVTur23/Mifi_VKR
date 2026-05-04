@@ -46,6 +46,9 @@ MODEL_NLLB = "facebook/nllb-200-1.3B"
 BATCH_SIZE = 64
 OVERSAMPLE_FACTOR = 3
 MIN_JUDGE_SCORE_STAGE3 = 2.5
+TRANSLATION_MIN_TEXT_LENGTH = 250
+TRANSLATION_MIN_LENGTH_RATIO = 0.35
+TRANSLATION_APPLY_PROMPT_LEAK_FILTER = False
 
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
@@ -264,6 +267,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     """
     global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3
     global TRANSLATION_CHUNK_MAX_TOKENS, TRANSLATION_OUTPUT_LENGTH_FACTOR, TRANSLATION_OUTPUT_MAX_TOKENS
+    global TRANSLATION_MIN_TEXT_LENGTH, TRANSLATION_MIN_LENGTH_RATIO, TRANSLATION_APPLY_PROMPT_LEAK_FILTER
 
     # Флаг originals_only_sources: если True, BT берётся только из оригинальных
     # писем (stage 0). Stage 2 используется только для дедупликации.
@@ -276,6 +280,15 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         MAX_RETRIES = s.max_retries
         OVERSAMPLE_FACTOR = s.oversample_factor
         MIN_JUDGE_SCORE_STAGE3 = s.min_judge_score
+        TRANSLATION_MIN_TEXT_LENGTH = int(
+            s.get("validation_min_text_length", TRANSLATION_MIN_TEXT_LENGTH)
+        )
+        TRANSLATION_MIN_LENGTH_RATIO = float(
+            s.get("validation_min_length_ratio", TRANSLATION_MIN_LENGTH_RATIO)
+        )
+        TRANSLATION_APPLY_PROMPT_LEAK_FILTER = bool(
+            s.get("apply_prompt_leak_filter", TRANSLATION_APPLY_PROMPT_LEAK_FILTER)
+        )
         MODEL_NLLB = pipeline_cfg.gpu.nllb_model
         BATCH_SIZE = pipeline_cfg.gpu.nllb_batch_size
         chunking_cfg = s.get("translation_chunking", {})
@@ -299,6 +312,9 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     print(f"       источник BT: "
           f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
     print(f"       NLLB: {MODEL_NLLB}, chunk_max_tokens={TRANSLATION_CHUNK_MAX_TOKENS}")
+    print(f"       validation length: min={TRANSLATION_MIN_TEXT_LENGTH}, "
+          f"ratio={TRANSLATION_MIN_LENGTH_RATIO}, "
+          f"prompt_leak_filter={TRANSLATION_APPLY_PROMPT_LEAK_FILTER}")
     print("=" * 60)
 
     # ==========================================================
@@ -437,6 +453,10 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                     candidates, current_existing, class_name,
                     similarity_threshold=sim_threshold,
                     sbert_model=sbert_model,
+                    min_length=TRANSLATION_MIN_TEXT_LENGTH,
+                    source_texts=candidate_originals,
+                    min_length_ratio=TRANSLATION_MIN_LENGTH_RATIO,
+                    apply_prompt_leak_filter=TRANSLATION_APPLY_PROMPT_LEAK_FILTER,
                 )
                 n_after_validation = len(valid)
 

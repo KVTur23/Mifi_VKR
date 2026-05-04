@@ -54,6 +54,11 @@
       "oversample_factor": 5,
       "originals_only_sources": true,
       "judge_min_score": 4.5,
+      "validation_min_text_length": 250,
+      "validation_min_length_ratio": 0.35,
+      "apply_prompt_leak_filter": false,
+      "post_judge_retries": 3,
+      "final_fill_below_threshold": true,
       "paraphraser": {
         "model": "fyaronskiy/ruT5-large-paraphraser",
         "batch_size": 8,
@@ -66,7 +71,12 @@
         "top_p": 0.95,
         "repetition_penalty": 1.1,
         "encoder_no_repeat_ngram_size": 3,
-        "no_repeat_ngram_size": 3
+        "no_repeat_ngram_size": 3,
+        "small_class_source_threshold": 6,
+        "small_class_temperature": 0.95,
+        "temperature_increase_after_attempt": 3,
+        "temperature_step": 0.05,
+        "max_temperature": 1.1
       }
     },
     "stage3": {
@@ -75,6 +85,9 @@
       "oversample_factor": 3,
       "min_judge_score": 2.5,
       "originals_only_sources": true,
+      "validation_min_text_length": 250,
+      "validation_min_length_ratio": 0.35,
+      "apply_prompt_leak_filter": false,
       "translation_chunking": {
         "chunk_max_tokens": 900,
         "output_length_factor": 1.3,

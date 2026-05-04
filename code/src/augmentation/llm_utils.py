@@ -237,6 +237,7 @@ def select_top_paraphrases(
     llm: Any,
     n_needed: int,
     min_score: float | None = None,
+    fill_to_n: bool = False,
 ) -> list[str]:
     """
     Судья для парафразов — сравнивает каждый парафраз с его конкретным оригиналом.
@@ -278,13 +279,27 @@ def select_top_paraphrases(
     good = [(text, score) for text, score in scored if score >= threshold]
     removed = len(scored) - len(good)
 
-    selected = [text for text, score in good[:n_needed]]
+    selected_pairs = good[:n_needed]
+    if fill_to_n and len(selected_pairs) < n_needed:
+        below_threshold = [
+            (text, score)
+            for text, score in scored
+            if score < threshold
+        ]
+        needed_extra = n_needed - len(selected_pairs)
+        selected_pairs.extend(below_threshold[:needed_extra])
+
+    selected = [text for text, score in selected_pairs]
 
     avg_score = sum(s for _, s in scored) / len(scored)
-    avg_selected = sum(s for _, s in good[:n_needed]) / max(len(selected), 1)
+    avg_selected = sum(s for _, s in selected_pairs) / max(len(selected), 1)
     print(f"  [Судья] Средняя оценка: {avg_score:.1f}, "
           f"отсеяно < {threshold}: {removed}, "
           f"отобрано {len(selected)}, средняя отобранных: {avg_selected:.1f}")
+    if fill_to_n and selected:
+        below_selected = sum(1 for _, score in selected_pairs if score < threshold)
+        if below_selected:
+            print(f"  [Судья] Финальный добор: принято ниже порога {below_selected}")
 
     return selected
 

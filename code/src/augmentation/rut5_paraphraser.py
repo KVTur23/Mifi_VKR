@@ -77,7 +77,13 @@ class RuT5Paraphraser:
         )
         return cls(cfg)
 
-    def paraphrase_texts(self, texts: list[str]) -> list[str]:
+    def paraphrase_texts(
+        self,
+        texts: list[str],
+        temperature: float | None = None,
+        top_p: float | None = None,
+        do_sample: bool | None = None,
+    ) -> list[str]:
         if not texts:
             return []
 
@@ -99,10 +105,17 @@ class RuT5Paraphraser:
 
         print(
             f"[ruT5] Писем: {len(texts)}, чанков: {len(flat_chunks)}, "
-            f"multi-chunk: {multi_chunk_docs}, forced splits: {forced_splits}"
+            f"multi-chunk: {multi_chunk_docs}, forced splits: {forced_splits}, "
+            f"temperature={temperature if temperature is not None else self.cfg.temperature:.2f}"
         )
 
-        generated_chunks = self._generate_chunks(flat_chunks, flat_input_tokens)
+        generated_chunks = self._generate_chunks(
+            flat_chunks,
+            flat_input_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            do_sample=do_sample,
+        )
 
         grouped: list[list[str]] = [[] for _ in texts]
         for owner, generated in zip(owners, generated_chunks):
@@ -123,8 +136,15 @@ class RuT5Paraphraser:
         self,
         chunks: list[str],
         input_token_counts: list[int],
+        temperature: float | None = None,
+        top_p: float | None = None,
+        do_sample: bool | None = None,
     ) -> list[str]:
         outputs: list[str] = []
+        generation_temperature = self.cfg.temperature if temperature is None else temperature
+        generation_top_p = self.cfg.top_p if top_p is None else top_p
+        generation_do_sample = self.cfg.do_sample if do_sample is None else do_sample
+
         for start in tqdm(
             range(0, len(chunks), self.cfg.batch_size),
             desc="[ruT5] paraphrase",
@@ -150,9 +170,9 @@ class RuT5Paraphraser:
                     **inputs,
                     max_length=max_length,
                     num_beams=self.cfg.num_beams,
-                    do_sample=self.cfg.do_sample,
-                    temperature=self.cfg.temperature,
-                    top_p=self.cfg.top_p,
+                    do_sample=generation_do_sample,
+                    temperature=generation_temperature,
+                    top_p=generation_top_p,
                     repetition_penalty=self.cfg.repetition_penalty,
                     encoder_no_repeat_ngram_size=self.cfg.encoder_no_repeat_ngram_size,
                     no_repeat_ngram_size=self.cfg.no_repeat_ngram_size,

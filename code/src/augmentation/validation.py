@@ -53,6 +53,9 @@ def validate_generated_texts(
     min_length: int = MIN_TEXT_LENGTH,
     sbert_model: SentenceTransformer | None = None,
     n_original: int | None = None,
+    apply_prompt_leak_filter: bool = True,
+    source_texts: list[str] | None = None,
+    min_length_ratio: float | None = None,
 ) -> list[str]:
     """
     Главная функция — прогоняет новые тексты через все фильтры.
@@ -67,6 +70,11 @@ def validate_generated_texts(
                                загрузится автоматически через кэш.
         n_original:            количество оригинальных примеров класса (до аугментации).
                                Если == 1 — используется мягкий порог 0.98.
+        apply_prompt_leak_filter: применять фильтр промпт-утечки.
+        source_texts:          тексты-источники для paired transformations
+                               (парафраз/перевод), параллельные new_texts.
+        min_length_ratio:      если source_texts заданы, минимальная длина
+                               кандидата как доля от длины источника.
 
     Возвращает:
         Список текстов, прошедших все проверки
@@ -79,12 +87,22 @@ def validate_generated_texts(
 
     # --- Цепочка фильтров: от дешёвых к дорогим ---
 
-    texts = remove_exact_duplicates(new_texts, existing_texts, class_name)
-    texts = filter_short_texts(texts, class_name, min_length=min_length)
+    pairs = [(text, None) for text in new_texts]
+    if source_texts is not None:
+        pairs = list(zip(new_texts, source_texts))
+
+    pairs = remove_exact_duplicate_pairs(pairs, existing_texts, class_name)
+    pairs = filter_short_text_pairs(
+        pairs, class_name,
+        min_length=min_length,
+        min_length_ratio=min_length_ratio,
+    )
+    texts = [text for text, _ in pairs]
     texts = filter_non_russian(texts, class_name)
     texts = filter_degenerate(texts, class_name)
     texts = filter_foreign_scripts(texts, class_name)
-    texts = filter_prompt_leak(texts, class_name)
+    if apply_prompt_leak_filter:
+        texts = filter_prompt_leak(texts, class_name)
 
     threshold = similarity_threshold
 
@@ -148,6 +166,29 @@ def remove_exact_duplicates(
     return unique_texts
 
 
+def remove_exact_duplicate_pairs(
+    pairs: list[tuple[str, str | None]],
+    existing_texts: list[str],
+    class_name: str,
+) -> list[tuple[str, str | None]]:
+    existing_normalized = {t.strip().lower() for t in existing_texts}
+
+    unique_pairs = []
+    seen = set()
+
+    for text, source in pairs:
+        normalized = text.strip().lower()
+        if normalized not in existing_normalized and normalized not in seen:
+            unique_pairs.append((text, source))
+            seen.add(normalized)
+
+    removed = len(pairs) - len(unique_pairs)
+    if removed > 0:
+        print(f"  [Дубликаты] Класс «{class_name}»: удалено {removed} точных дубликатов")
+
+    return unique_pairs
+
+
 def filter_short_texts(
     texts: list[str],
     class_name: str,
@@ -170,6 +211,36 @@ def filter_short_texts(
     if removed > 0:
         print(f"  [Длина] Класс «{class_name}»: отсеяно {removed} текстов "
               f"(короче {min_length} символов)")
+
+    return filtered
+
+
+def filter_short_text_pairs(
+    pairs: list[tuple[str, str | None]],
+    class_name: str,
+    min_length: int = MIN_TEXT_LENGTH,
+    min_length_ratio: float | None = None,
+) -> list[tuple[str, str | None]]:
+    filtered = []
+    removed = 0
+
+    for text, source in pairs:
+        threshold = min_length
+        if source is not None and min_length_ratio is not None:
+            threshold = min(threshold, int(len(source.strip()) * min_length_ratio))
+            threshold = max(threshold, 1)
+
+        if len(text.strip()) >= threshold:
+            filtered.append((text, source))
+        else:
+            removed += 1
+
+    if removed > 0:
+        if min_length_ratio is None:
+            rule = f"короче {min_length} символов"
+        else:
+            rule = f"короче min({min_length}, {min_length_ratio:.0%} от источника)"
+        print(f"  [Длина] Класс «{class_name}»: отсеяно {removed} текстов ({rule})")
 
     return filtered
 

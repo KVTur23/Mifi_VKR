@@ -173,7 +173,7 @@ GPU = "A100"  # варианты: "T4", "L4", "A100", "H100"
 - `prompt_template` — шаблон промпта из `prompts/aug_prompts/`
 - `system_prompt` — системный промпт для генерации на этапе 1
 
-Параметры ruT5-парафраза и NLLB-чанкования теперь задаются в `pipeline_config.json`.
+Параметры ruT5-парафраза, post-judge добора, температурной политики, paired validation и NLLB-чанкования теперь задаются в `pipeline_config.json`.
 
 ---
 
