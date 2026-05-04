@@ -62,21 +62,21 @@
       "paraphraser": {
         "model": "fyaronskiy/ruT5-large-paraphraser",
         "batch_size": 8,
-        "chunk_max_tokens": 420,
-        "output_length_factor": 2.0,
-        "output_max_tokens": 768,
-        "num_beams": 3,
+        "chunk_max_tokens": 320,
+        "output_length_factor": 2.5,
+        "output_max_tokens": 1024,
+        "num_beams": 1,
         "do_sample": true,
-        "temperature": 0.8,
-        "top_p": 0.95,
-        "repetition_penalty": 1.1,
+        "temperature": 0.85,
+        "top_p": 0.92,
+        "repetition_penalty": 1.03,
         "encoder_no_repeat_ngram_size": 0,
         "no_repeat_ngram_size": 0,
         "small_class_source_threshold": 6,
-        "small_class_temperature": 0.95,
-        "temperature_increase_after_attempt": 3,
-        "temperature_step": 0.05,
-        "max_temperature": 1.1
+        "small_class_temperature": 0.9,
+        "temperature_increase_after_attempt": 2,
+        "temperature_step": 0.03,
+        "max_temperature": 1.0
       }
     },
     "stage3": {
@@ -117,15 +117,45 @@
     "weight_decay": 0.01
   },
   "finetune": {
-    "T4":       {"per_device_batch": 1, "grad_accum": 16, "max_seq": 1024, "bf16": false, "fp16": true},
-    "L4":       {"per_device_batch": 1, "grad_accum": 16, "max_seq": 1536, "bf16": true,  "fp16": false},
-    "A100_40":  {"per_device_batch": 2, "grad_accum": 8,  "max_seq": 1536, "bf16": true,  "fp16": false},
-    "A100_80":  {"per_device_batch": 4, "grad_accum": 4,  "max_seq": 2048, "bf16": true,  "fp16": false},
-    "H100":     {"per_device_batch": 4, "grad_accum": 4,  "max_seq": 2048, "bf16": true,  "fp16": false},
+    "T4": {
+      "per_device_batch": 1,
+      "grad_accum": 16,
+      "max_seq": 1024,
+      "bf16": false,
+      "fp16": true
+    },
+    "L4": {
+      "per_device_batch": 1,
+      "grad_accum": 16,
+      "max_seq": 1536,
+      "bf16": true,
+      "fp16": false
+    },
+    "A100_40": {
+      "per_device_batch": 2,
+      "grad_accum": 8,
+      "max_seq": 1536,
+      "bf16": true,
+      "fp16": false
+    },
+    "A100_80": {
+      "per_device_batch": 4,
+      "grad_accum": 4,
+      "max_seq": 2048,
+      "bf16": true,
+      "fp16": false
+    },
+    "H100": {
+      "per_device_batch": 4,
+      "grad_accum": 4,
+      "max_seq": 2048,
+      "bf16": true,
+      "fp16": false
+    },
     "common": {
       "output_dir": "Data/finetune_checkpoints",
       "results_csv": "results/finetune_results.csv",
-      "preds_dir":   "results/",
+      "preds_dir": "results/",
       "early_stopping_patience": 2
     }
   },
@@ -142,7 +172,12 @@
       "B_min": 15,
       "C_max": 15
     },
-    "k_shots": [0, 1, 3, 5],
+    "k_shots": [
+      0,
+      1,
+      3,
+      5
+    ],
     "extract_prediction": {
       "fuzzy_cutoff": 0.6
     },
