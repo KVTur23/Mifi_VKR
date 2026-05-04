@@ -16,7 +16,9 @@ import sys
 import random
 import argparse
 import gc
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 import numpy as np
@@ -28,6 +30,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.utils.data_loader import (
     load_dataset, save_checkpoint, get_class_distribution,
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
+    DATA_DIR,
 )
 from src.augmentation.llm_utils import load_llm, select_top_paraphrases
 from src.augmentation.rut5_paraphraser import RuT5Paraphraser
@@ -50,6 +53,8 @@ TEMPERATURE_INCREASE_AFTER_ATTEMPT = 3
 TEMPERATURE_STEP = 0.05
 MAX_TEMPERATURE = 1.10
 
+_PAIRS_CSV = DATA_DIR / "_stage2_pairs_cache.csv"
+
 
 def augment_class(
     class_name: str,
@@ -59,6 +64,8 @@ def augment_class(
     n_original: int | None = None,
     paraphrase_sources: list[str] | None = None,
     generation_attempt_offset: int = 0,
+    initial_pairs: list[tuple[str, str]] | None = None,
+    cache_callback: Callable[[list[tuple[str, str]]], None] | None = None,
 ) -> list[tuple[str, str]]:
     """
     Builds a validated candidate pool for one class.
@@ -66,8 +73,8 @@ def augment_class(
     Returns pairs: (paraphrase, source_original). LLM-judge selection happens
     after ruT5 is unloaded, so that vLLM has GPU memory available.
     """
-    candidate_pairs: list[tuple[str, str]] = []
-    current_existing = list(existing_texts)
+    candidate_pairs: list[tuple[str, str]] = list(initial_pairs or [])
+    current_existing = list(existing_texts) + [p[0] for p in candidate_pairs]
 
     if paraphrase_sources is None:
         paraphrase_sources = existing_texts
@@ -91,43 +98,59 @@ def augment_class(
               f"генерируем {len(sources)} ruT5-парафразов, "
               f"global_attempt={global_attempt}, temperature={temperature:.2f}")
 
-        raw_outputs = paraphraser.paraphrase_texts(sources, temperature=temperature)
-        pairs = [
-            (text, source)
-            for text, source in zip(raw_outputs, sources)
-            if text and text.strip()
-        ]
-
-        print(f"  [Раунд {attempt}] Получено {len(pairs)} парафразов")
-        if not pairs:
-            continue
-
-        paraphrased = [p[0] for p in pairs]
-        originals = [p[1] for p in pairs]
-
         sim_threshold = min(0.95 + max(0, attempt - 2) * 0.01, 0.98)
-        valid = validate_generated_texts(
-            paraphrased, current_existing, class_name,
-            similarity_threshold=sim_threshold, n_original=n_original,
-            min_length=RUT5_MIN_TEXT_LENGTH,
-            source_texts=originals,
-            min_length_ratio=RUT5_MIN_LENGTH_RATIO,
-            apply_prompt_leak_filter=RUT5_APPLY_PROMPT_LEAK_FILTER,
-        )
-        n_after_validation = len(valid)
+        received_total = 0
+        valid_total = 0
+        added_total = 0
+        source_batch_size = max(1, paraphraser.cfg.batch_size)
 
-        valid_set = set(valid)
-        valid_pairs = [
-            (para, orig)
-            for para, orig in zip(paraphrased, originals)
-            if para in valid_set
-        ]
+        for batch_start in range(0, len(sources), source_batch_size):
+            if len(candidate_pairs) >= pool_target:
+                break
 
-        candidate_pairs.extend(valid_pairs)
-        current_existing.extend([p[0] for p in valid_pairs])
+            source_batch = sources[batch_start:batch_start + source_batch_size]
+            raw_outputs = paraphraser.paraphrase_texts(source_batch, temperature=temperature)
+            pairs = [
+                (text, source)
+                for text, source in zip(raw_outputs, source_batch)
+                if text and text.strip()
+            ]
+            received_total += len(pairs)
 
-        print(f"  [Раунд {attempt}] После фильтров {n_after_validation}, "
-              f"в пул +{len(valid_pairs)}, всего в пуле {len(candidate_pairs)}/{pool_target}")
+            if not pairs:
+                continue
+
+            paraphrased = [p[0] for p in pairs]
+            originals = [p[1] for p in pairs]
+
+            valid = validate_generated_texts(
+                paraphrased, current_existing, class_name,
+                similarity_threshold=sim_threshold, n_original=n_original,
+                min_length=RUT5_MIN_TEXT_LENGTH,
+                source_texts=originals,
+                min_length_ratio=RUT5_MIN_LENGTH_RATIO,
+                apply_prompt_leak_filter=RUT5_APPLY_PROMPT_LEAK_FILTER,
+            )
+            n_after_validation = len(valid)
+            valid_total += n_after_validation
+
+            valid_set = set(valid)
+            valid_pairs = [
+                (para, orig)
+                for para, orig in zip(paraphrased, originals)
+                if para in valid_set
+            ]
+
+            candidate_pairs.extend(valid_pairs)
+            current_existing.extend([p[0] for p in valid_pairs])
+            added_total += len(valid_pairs)
+
+            if cache_callback is not None and valid_pairs:
+                cache_callback(candidate_pairs)
+
+        print(f"  [Раунд {attempt}] Получено {received_total} парафразов")
+        print(f"  [Раунд {attempt}] После фильтров {valid_total}, "
+              f"в пул +{added_total}, всего в пуле {len(candidate_pairs)}/{pool_target}")
 
     if len(candidate_pairs) < n_needed:
         print(f"  [Внимание] Класс «{class_name}»: после ruT5 и фильтров только "
@@ -175,6 +198,68 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
         sources.extend(extra[:remainder])
 
     return sources
+
+
+def _load_pairs_cache(classes_to_augment: dict[str, int]) -> dict[str, list[tuple[str, str]]]:
+    """Loads validated ruT5 candidate pairs from the previous interrupted run."""
+    if not _PAIRS_CSV.exists():
+        return {}
+
+    try:
+        df_cache = pd.read_csv(_PAIRS_CSV)
+    except Exception as e:
+        print(f"[Этап 2][Кэш] Не удалось прочитать {_PAIRS_CSV.name}: {e}")
+        return {}
+
+    required = {LABEL_COL, "paraphrase", "original"}
+    if not required.issubset(df_cache.columns):
+        print(f"[Этап 2][Кэш] {_PAIRS_CSV.name} имеет старый формат, игнорирую")
+        return {}
+
+    pending_labels = set(classes_to_augment)
+    loaded: dict[str, list[tuple[str, str]]] = {}
+    for _, row in df_cache.iterrows():
+        class_name = row[LABEL_COL]
+        if class_name not in pending_labels:
+            continue
+        paraphrase = str(row["paraphrase"]).strip()
+        original = str(row["original"]).strip()
+        if paraphrase and original:
+            loaded.setdefault(class_name, []).append((paraphrase, original))
+
+    total = sum(len(v) for v in loaded.values())
+    if total:
+        print(f"[Этап 2][Кэш] Загружено {total} валидированных кандидатов из {_PAIRS_CSV.name}")
+    return loaded
+
+
+def _save_pairs_cache(class_pools: dict[str, dict]) -> None:
+    """Persists current ruT5 candidate pools so a runtime disconnect does not lose them."""
+    rows = []
+    for class_name, state in class_pools.items():
+        for paraphrase, original in state.get("pairs", []):
+            rows.append({
+                LABEL_COL: class_name,
+                "paraphrase": paraphrase,
+                "original": original,
+            })
+
+    if not rows:
+        return
+
+    pd.DataFrame(rows).to_csv(_PAIRS_CSV, index=False)
+    print(f"[Этап 2][Кэш] Сохранено {len(rows)} кандидатов в {_PAIRS_CSV.name}")
+
+
+def _archive_pairs_cache(cycle: int) -> None:
+    """Moves consumed pool cache aside after judge/checkpoint processing."""
+    if not _PAIRS_CSV.exists():
+        return
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = _PAIRS_CSV.with_name(f"_stage2_pairs_cache_cycle{cycle}_{stamp}.bak.csv")
+    _PAIRS_CSV.rename(backup)
+    print(f"[Этап 2][Кэш] Пул кандидатов обработан → {backup.name}")
 
 
 def run(config_path: str, pipeline_cfg=None) -> None:
@@ -267,6 +352,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
         class_pools: dict[str, dict] = {}
+        cached_pairs_by_class = _load_pairs_cache(classes_to_augment)
         paraphraser = RuT5Paraphraser.from_pipeline_config(pipeline_cfg)
 
         try:
@@ -290,6 +376,20 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                       f"(из них {real_original_count} оригиналов), "
                       f"источников: {len(paraphrase_sources)}, нужно ещё {n_needed}")
 
+                cached_pairs = cached_pairs_by_class.get(class_name, [])
+                if cached_pairs:
+                    print(f"  [Кэш] «{class_name}»: найдено {len(cached_pairs)} "
+                          f"валидированных кандидатов")
+
+                class_pools[class_name] = {
+                    "pairs": list(cached_pairs),
+                    "n_needed": n_needed,
+                }
+
+                def save_current_pool(pairs, class_name=class_name):
+                    class_pools[class_name]["pairs"] = list(pairs)
+                    _save_pairs_cache(class_pools)
+
                 try:
                     pairs = augment_class(
                         class_name=class_name,
@@ -299,16 +399,16 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                         n_original=real_original_count,
                         paraphrase_sources=paraphrase_sources,
                         generation_attempt_offset=(cycle - 1) * MAX_RETRIES,
+                        initial_pairs=cached_pairs,
+                        cache_callback=save_current_pool,
                     )
                 except Exception as e:
                     print(f"[Этап 2] Ошибка при ruT5-парафразе класса «{class_name}»: {e}")
                     print("[Этап 2] Пропускаю класс, продолжаю с остальными")
                     continue
 
-                class_pools[class_name] = {
-                    "pairs": pairs,
-                    "n_needed": n_needed,
-                }
+                class_pools[class_name]["pairs"] = pairs
+                _save_pairs_cache(class_pools)
         finally:
             paraphraser.unload()
 
@@ -316,7 +416,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        if not class_pools:
+        if not any(state.get("pairs") for state in class_pools.values()):
             print("[Этап 2] В этом цикле нет кандидатов для судьи")
             continue
 
@@ -376,6 +476,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             print(f"[Этап 2] Цикл {cycle}: новых текстов не добавлено")
         else:
             print(f"[Этап 2] Цикл {cycle}: добавлено {cycle_added} текстов")
+        _archive_pairs_cache(cycle)
 
     remaining = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
     if remaining:

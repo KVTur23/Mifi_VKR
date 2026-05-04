@@ -17,6 +17,7 @@ import sys
 import gc
 import random
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -63,6 +64,72 @@ TRANSLATION_OUTPUT_MAX_TOKENS = 1024
 
 # промежуточный csv для пар фазы 1 — при рестарте подхватываем и сразу в фазу 2
 _PAIRS_CSV = DATA_DIR / "_stage3_pairs_cache.csv"
+
+
+def _load_pairs_cache(classes_to_augment: dict[str, int]) -> dict[str, list[tuple[str, str]]]:
+    """Loads validated BT candidate pairs from the previous interrupted run."""
+    if not _PAIRS_CSV.exists():
+        return {}
+
+    try:
+        df_cache = pd.read_csv(_PAIRS_CSV)
+    except Exception as e:
+        print(f"[Этап 3][Кэш] Не удалось прочитать {_PAIRS_CSV.name}: {e}")
+        return {}
+
+    text_col = "translated" if "translated" in df_cache.columns else "candidate"
+    required = {LABEL_COL, text_col, "original"}
+    if not required.issubset(df_cache.columns):
+        print(f"[Этап 3][Кэш] {_PAIRS_CSV.name} имеет старый формат, игнорирую")
+        return {}
+
+    pending_labels = set(classes_to_augment)
+    loaded: dict[str, list[tuple[str, str]]] = {}
+    for _, row in df_cache.iterrows():
+        class_name = row[LABEL_COL]
+        if class_name not in pending_labels:
+            continue
+        translated = str(row[text_col]).strip()
+        original = str(row["original"]).strip()
+        if translated and original:
+            loaded.setdefault(class_name, []).append((translated, original))
+
+    total = sum(len(v) for v in loaded.values())
+    if total:
+        print(f"[Этап 3][Кэш] Загружено {total} валидированных кандидатов из {_PAIRS_CSV.name}")
+    return loaded
+
+
+def _save_pairs_cache(class_state: dict[str, dict], pivot_lang: str) -> None:
+    """Persists current BT candidate pools so a runtime disconnect does not lose them."""
+    rows = []
+    for class_name, state in class_state.items():
+        for translated, original in state.get("accepted_pairs", []):
+            rows.append({
+                LABEL_COL: class_name,
+                "pivot_lang": pivot_lang,
+                "translated": translated,
+                "original": original,
+            })
+
+    if not rows:
+        return
+
+    pd.DataFrame(rows).to_csv(_PAIRS_CSV, index=False)
+    print(f"  [Кэш] {pivot_lang}: сохранено {len(rows)} пар в {_PAIRS_CSV.name}")
+
+
+def _archive_pairs_cache(pivot_round: int, pivot_lang: str) -> None:
+    """Moves consumed pool cache aside after judge/checkpoint processing."""
+    if not _PAIRS_CSV.exists():
+        return
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = _PAIRS_CSV.with_name(
+        f"_stage3_pairs_cache_round{pivot_round}_{pivot_lang}_{stamp}.bak.csv"
+    )
+    _PAIRS_CSV.rename(backup)
+    print(f"[Этап 3][{pivot_lang}] Кэш пар обработан → {backup.name}")
 
 
 def load_translation_models() -> tuple:
@@ -382,6 +449,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
             print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
 
+        cached_pairs_by_class = _load_pairs_cache(classes_to_augment)
         class_state = {}
         for class_name, current_count in classes_to_augment.items():
             existing = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
@@ -397,101 +465,105 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             else:
                 bt_sources = existing
 
+            cached_pairs = cached_pairs_by_class.get(class_name, [])
+            if cached_pairs:
+                print(f"  [Кэш] «{class_name}»: найдено {len(cached_pairs)} "
+                      f"валидированных кандидатов")
+
             class_state[class_name] = {
                 "existing": existing,
                 "bt_sources": bt_sources,
                 "n_needed": TARGET_COUNT - current_count,
-                "accepted_pairs": [],
+                "accepted_pairs": list(cached_pairs),
             }
 
-        model, tokenizer, device = load_translation_models()
-        sbert_model = load_sbert_on_gpu()
+        needs_translation = any(
+            len(state["accepted_pairs"]) < state["n_needed"] * 2
+            for state in class_state.values()
+        )
 
-        for attempt in range(1, MAX_RETRIES + 1):
-            pending = {
-                name: state for name, state in class_state.items()
-                if len(state["accepted_pairs"]) < state["n_needed"] * 2
-            }
-            if not pending:
-                break
+        if needs_translation:
+            model, tokenizer, device = load_translation_models()
+            sbert_model = load_sbert_on_gpu()
 
-            print(f"\n[Этап 3][{pivot_lang}] Попытка {attempt}/{MAX_RETRIES}: "
-                  f"{len(pending)} классов ещё набирают кандидатов")
+            try:
+                for attempt in range(1, MAX_RETRIES + 1):
+                    pending = {
+                        name: state for name, state in class_state.items()
+                        if len(state["accepted_pairs"]) < state["n_needed"] * 2
+                    }
+                    if not pending:
+                        break
 
-            all_sources: list[str] = []
-            source_class: list[str] = []
+                    print(f"\n[Этап 3][{pivot_lang}] Попытка {attempt}/{MAX_RETRIES}: "
+                          f"{len(pending)} классов ещё набирают кандидатов")
 
-            for class_name, state in pending.items():
-                pool_gap = state["n_needed"] * 2 - len(state["accepted_pairs"])
-                n_to_generate = max(pool_gap, 1) * OVERSAMPLE_FACTOR
-                sources = select_sources(state["bt_sources"], n_to_generate)
-                all_sources.extend(sources)
-                source_class.extend([class_name] * len(sources))
+                    all_sources: list[str] = []
+                    source_class: list[str] = []
 
-            print(f"  Всего источников для перевода: {len(all_sources)}")
+                    for class_name, state in pending.items():
+                        pool_gap = state["n_needed"] * 2 - len(state["accepted_pairs"])
+                        n_to_generate = max(pool_gap, 1) * OVERSAMPLE_FACTOR
+                        sources = select_sources(state["bt_sources"], n_to_generate)
+                        all_sources.extend(sources)
+                        source_class.extend([class_name] * len(sources))
 
-            all_translated = back_translate(all_sources, model, tokenizer, device, pivot_lang)
+                    print(f"  Всего источников для перевода: {len(all_sources)}")
 
-            pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
-            for translated, source, cls_name in zip(all_translated, all_sources, source_class):
-                if translated.strip():
-                    pairs_by_class[cls_name].append((translated.strip(), source))
+                    all_translated = back_translate(all_sources, model, tokenizer, device, pivot_lang)
 
-            for class_name, state in class_state.items():
-                if class_name not in pending:
-                    continue
+                    pairs_by_class: dict[str, list[tuple[str, str]]] = {name: [] for name in pending}
+                    for translated, source, cls_name in zip(all_translated, all_sources, source_class):
+                        if translated.strip():
+                            pairs_by_class[cls_name].append((translated.strip(), source))
 
-                pairs = pairs_by_class.get(class_name, [])
-                if not pairs:
-                    continue
+                    for class_name, state in class_state.items():
+                        if class_name not in pending:
+                            continue
 
-                candidates = [p[0] for p in pairs]
-                candidate_originals = [p[1] for p in pairs]
+                        pairs = pairs_by_class.get(class_name, [])
+                        if not pairs:
+                            continue
 
-                current_existing = state["existing"] + [p[0] for p in state["accepted_pairs"]]
-                valid = validate_generated_texts(
-                    candidates, current_existing, class_name,
-                    similarity_threshold=sim_threshold,
-                    sbert_model=sbert_model,
-                    min_length=TRANSLATION_MIN_TEXT_LENGTH,
-                    source_texts=candidate_originals,
-                    min_length_ratio=TRANSLATION_MIN_LENGTH_RATIO,
-                    apply_prompt_leak_filter=TRANSLATION_APPLY_PROMPT_LEAK_FILTER,
-                )
-                n_after_validation = len(valid)
+                        candidates = [p[0] for p in pairs]
+                        candidate_originals = [p[1] for p in pairs]
 
-                valid_set = set(valid)
-                valid_pairs = [
-                    (t, o) for t, o in zip(candidates, candidate_originals)
-                    if t in valid_set
-                ]
-                state["accepted_pairs"].extend(valid_pairs)
+                        current_existing = state["existing"] + [p[0] for p in state["accepted_pairs"]]
+                        valid = validate_generated_texts(
+                            candidates, current_existing, class_name,
+                            similarity_threshold=sim_threshold,
+                            sbert_model=sbert_model,
+                            min_length=TRANSLATION_MIN_TEXT_LENGTH,
+                            source_texts=candidate_originals,
+                            min_length_ratio=TRANSLATION_MIN_LENGTH_RATIO,
+                            apply_prompt_leak_filter=TRANSLATION_APPLY_PROMPT_LEAK_FILTER,
+                        )
+                        n_after_validation = len(valid)
 
-                print(f"  [{pivot_lang} {attempt}] «{class_name}»: получено {len(candidates)}, "
-                      f"после фильтров {n_after_validation}, "
-                      f"в пул +{len(valid_pairs)}, всего в пуле {len(state['accepted_pairs'])}")
+                        valid_set = set(valid)
+                        valid_pairs = [
+                            (t, o) for t, o in zip(candidates, candidate_originals)
+                            if t in valid_set
+                        ]
+                        state["accepted_pairs"].extend(valid_pairs)
 
-            cache_rows = []
-            for cn, st in class_state.items():
-                for translated, original in st["accepted_pairs"]:
-                    cache_rows.append({
-                        LABEL_COL: cn,
-                        "pivot_lang": pivot_lang,
-                        "translated": translated,
-                        "original": original,
-                    })
-            if cache_rows:
-                pd.DataFrame(cache_rows).to_csv(_PAIRS_CSV, index=False)
-                print(f"  [Кэш] {pivot_lang}, попытка {attempt}: сохранено {len(cache_rows)} пар")
+                        print(f"  [{pivot_lang} {attempt}] «{class_name}»: получено {len(candidates)}, "
+                              f"после фильтров {n_after_validation}, "
+                              f"в пул +{len(valid_pairs)}, всего в пуле {len(state['accepted_pairs'])}")
+                        _save_pairs_cache(class_state, pivot_lang)
 
-        print(f"\n[Этап 3][{pivot_lang}] Перевод завершён, выгружаем NLLB...")
-        unload_from_gpu(model, tokenizer, sbert_model)
-        model = tokenizer = sbert_model = None
-        import src.augmentation.validation as val_module
-        val_module._sbert_model = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+                    _save_pairs_cache(class_state, pivot_lang)
+            finally:
+                print(f"\n[Этап 3][{pivot_lang}] Перевод завершён, выгружаем NLLB...")
+                unload_from_gpu(model, tokenizer, sbert_model)
+                model = tokenizer = sbert_model = None
+                import src.augmentation.validation as val_module
+                val_module._sbert_model = None
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        else:
+            print(f"\n[Этап 3][{pivot_lang}] Достаточно кандидатов из кэша, перевод пропущен")
 
         print(f"\n[Этап 3][{pivot_lang}] Грузим LLM-судью...")
         llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
@@ -541,12 +613,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        if _PAIRS_CSV.exists():
-            backup = _PAIRS_CSV.with_name(
-                f"_stage3_pairs_cache_round{pivot_round}_{pivot_lang}.bak.csv"
-            )
-            _PAIRS_CSV.rename(backup)
-            print(f"[Этап 3][{pivot_lang}] Кэш пар переименован → {backup.name}")
+        _archive_pairs_cache(pivot_round, pivot_lang)
 
     print(f"\n[Этап 3] Итоговое распределение:")
     dist = get_class_distribution(df)
