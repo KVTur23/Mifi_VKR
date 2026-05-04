@@ -55,7 +55,7 @@
       "originals_only_sources": true,
       "judge_min_score": 4.5,
       "validation_min_text_length": 250,
-      "validation_min_length_ratio": 0.5,
+      "validation_min_length_ratio": 0.4,
       "apply_prompt_leak_filter": false,
       "post_judge_retries": 3,
       "final_fill_below_threshold": true,
