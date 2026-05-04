@@ -223,17 +223,27 @@ def filter_short_text_pairs(
 ) -> list[tuple[str, str | None]]:
     filtered = []
     removed = 0
+    rejected_text_lengths = []
+    rejected_source_lengths = []
+    rejected_thresholds = []
 
     for text, source in pairs:
+        text_len = len(text.strip())
         threshold = min_length
+        source_len = None
         if source is not None and min_length_ratio is not None:
-            threshold = max(threshold, int(len(source.strip()) * min_length_ratio))
+            source_len = len(source.strip())
+            threshold = max(threshold, int(source_len * min_length_ratio))
             threshold = max(threshold, 1)
 
-        if len(text.strip()) >= threshold:
+        if text_len >= threshold:
             filtered.append((text, source))
         else:
             removed += 1
+            rejected_text_lengths.append(text_len)
+            rejected_thresholds.append(threshold)
+            if source_len is not None:
+                rejected_source_lengths.append(source_len)
 
     if removed > 0:
         if min_length_ratio is None:
@@ -241,6 +251,14 @@ def filter_short_text_pairs(
         else:
             rule = f"короче max({min_length}, {min_length_ratio:.0%} от источника)"
         print(f"  [Длина] Класс «{class_name}»: отсеяно {removed} текстов ({rule})")
+        if rejected_text_lengths and rejected_thresholds:
+            details = (
+                f"медиана длины={int(np.median(rejected_text_lengths))}, "
+                f"медиана порога={int(np.median(rejected_thresholds))}"
+            )
+            if rejected_source_lengths:
+                details += f", медиана источника={int(np.median(rejected_source_lengths))}"
+            print(f"    [Длина] Отклонённые: {details}")
 
     return filtered
 
