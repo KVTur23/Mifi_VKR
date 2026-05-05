@@ -42,6 +42,7 @@ TARGET_COUNT = 35
 MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 5
 RUT5_JUDGE_MIN_SCORE = 4.5
+USE_JUDGE = True
 RUT5_MIN_TEXT_LENGTH = 250
 RUT5_MIN_LENGTH_RATIO = 0.35
 RUT5_APPLY_PROMPT_LEAK_FILTER = False
@@ -282,6 +283,7 @@ def _archive_pairs_cache(cycle: int) -> None:
 def run(config_path: str, pipeline_cfg=None) -> None:
     """Основная функция этапа 2."""
     global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR, RUT5_JUDGE_MIN_SCORE
+    global USE_JUDGE
     global RUT5_MIN_TEXT_LENGTH, RUT5_MIN_LENGTH_RATIO, RUT5_APPLY_PROMPT_LEAK_FILTER
     global POST_JUDGE_RETRIES, FINAL_FILL_BELOW_THRESHOLD
     global SMALL_CLASS_SOURCE_THRESHOLD, SMALL_CLASS_TEMPERATURE
@@ -296,6 +298,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         OVERSAMPLE_FACTOR = s.oversample_factor
         originals_only_sources = bool(s.get("originals_only_sources", True))
         RUT5_JUDGE_MIN_SCORE = float(s.get("judge_min_score", RUT5_JUDGE_MIN_SCORE))
+        USE_JUDGE = bool(s.get("use_judge", USE_JUDGE))
         RUT5_MIN_TEXT_LENGTH = int(s.get("validation_min_text_length", RUT5_MIN_TEXT_LENGTH))
         RUT5_MIN_LENGTH_RATIO = float(s.get("validation_min_length_ratio", RUT5_MIN_LENGTH_RATIO))
         RUT5_APPLY_PROMPT_LEAK_FILTER = bool(
@@ -325,7 +328,8 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     print(f"ЭТАП 2: ruT5-парафраз с чанкованием (< {TARGET_COUNT} → {TARGET_COUNT})")
     print(f"       источник парафраза: "
           f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
-    print(f"       LLM-judge threshold: {RUT5_JUDGE_MIN_SCORE}")
+    print(f"       LLM-judge: "
+          f"{'enabled, threshold=' + str(RUT5_JUDGE_MIN_SCORE) if USE_JUDGE else 'disabled'}")
     print(f"       validation length: min={RUT5_MIN_TEXT_LENGTH}, "
           f"ratio={RUT5_MIN_LENGTH_RATIO}, "
           f"prompt_leak_filter={RUT5_APPLY_PROMPT_LEAK_FILTER}")
@@ -434,14 +438,62 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             torch.cuda.empty_cache()
 
         if not any(state.get("pairs") for state in class_pools.values()):
-            print("[Этап 2] В этом цикле нет кандидатов для судьи")
+            print("[Этап 2] В этом цикле нет кандидатов для отбора")
             continue
 
-        print("\n[Этап 2] Грузим LLM-судью для отбора ruT5-парафразов...")
-        llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
-
         cycle_added = 0
-        try:
+        if USE_JUDGE:
+            print("\n[Этап 2] Грузим LLM-судью для отбора ruT5-парафразов...")
+            llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
+            try:
+                for class_name, state in class_pools.items():
+                    current_count = len(df[df[LABEL_COL] == class_name])
+                    n_needed = TARGET_COUNT - current_count
+                    if n_needed <= 0:
+                        continue
+
+                    pairs = state["pairs"]
+                    if not pairs:
+                        print(f"[Этап 2] Класс «{class_name}»: нет кандидатов для судьи")
+                        continue
+
+                    paras = [p[0] for p in pairs]
+                    origs = [p[1] for p in pairs]
+                    fill_to_n = is_final_cycle and FINAL_FILL_BELOW_THRESHOLD
+
+                    print(f"\n[Этап 2] Класс «{class_name}»: "
+                          f"{len(pairs)} кандидатов после ruT5, нужно {n_needed}, "
+                          f"final_fill={fill_to_n}")
+
+                    selected = select_top_paraphrases(
+                        paras, origs, class_name, llm,
+                        n_needed=n_needed,
+                        min_score=RUT5_JUDGE_MIN_SCORE,
+                        fill_to_n=fill_to_n,
+                    )
+
+                    if not selected:
+                        print(f"[Этап 2] Класс «{class_name}»: судья ничего не принял")
+                        continue
+
+                    df = pd.concat(
+                        [df, pd.DataFrame([{TEXT_COL: text, LABEL_COL: class_name} for text in selected])],
+                        ignore_index=True,
+                    )
+                    cycle_added += len(selected)
+                    total_added += len(selected)
+
+                    print(f"[Этап 2] Класс «{class_name}»: добавлено {len(selected)} парафразов, "
+                          f"теперь {len(df[df[LABEL_COL] == class_name])}/{TARGET_COUNT}")
+                    save_checkpoint(df, stage=STAGE)
+                    print(f"[Этап 2] Промежуточное сохранение: {len(df)} записей")
+            finally:
+                del llm
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        else:
+            print("\n[Этап 2] LLM-судья отключён: принимаю валидированные ruT5-кандидаты напрямую")
             for class_name, state in class_pools.items():
                 current_count = len(df[df[LABEL_COL] == class_name])
                 n_needed = TARGET_COUNT - current_count
@@ -450,26 +502,30 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
                 pairs = state["pairs"]
                 if not pairs:
-                    print(f"[Этап 2] Класс «{class_name}»: нет кандидатов для судьи")
+                    print(f"[Этап 2] Класс «{class_name}»: нет кандидатов после ruT5")
                     continue
 
-                paras = [p[0] for p in pairs]
-                origs = [p[1] for p in pairs]
-                fill_to_n = is_final_cycle and FINAL_FILL_BELOW_THRESHOLD
+                existing_set = {
+                    str(text).strip()
+                    for text in df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
+                    if str(text).strip()
+                }
+                selected = []
+                for paraphrase, _ in pairs:
+                    text = str(paraphrase).strip()
+                    if not text or text in existing_set:
+                        continue
+                    selected.append(text)
+                    existing_set.add(text)
+                    if len(selected) >= n_needed:
+                        break
 
                 print(f"\n[Этап 2] Класс «{class_name}»: "
-                      f"{len(pairs)} кандидатов после ruT5, нужно {n_needed}, "
-                      f"final_fill={fill_to_n}")
-
-                selected = select_top_paraphrases(
-                    paras, origs, class_name, llm,
-                    n_needed=n_needed,
-                    min_score=RUT5_JUDGE_MIN_SCORE,
-                    fill_to_n=fill_to_n,
-                )
+                      f"{len(pairs)} валидированных кандидатов после ruT5, "
+                      f"нужно {n_needed}, принято {len(selected)}")
 
                 if not selected:
-                    print(f"[Этап 2] Класс «{class_name}»: судья ничего не принял")
+                    print(f"[Этап 2] Класс «{class_name}»: нет новых уникальных кандидатов")
                     continue
 
                 df = pd.concat(
@@ -483,11 +539,6 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                       f"теперь {len(df[df[LABEL_COL] == class_name])}/{TARGET_COUNT}")
                 save_checkpoint(df, stage=STAGE)
                 print(f"[Этап 2] Промежуточное сохранение: {len(df)} записей")
-        finally:
-            del llm
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
         if cycle_added == 0:
             print(f"[Этап 2] Цикл {cycle}: новых текстов не добавлено")
