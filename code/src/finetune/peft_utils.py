@@ -75,7 +75,13 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
 
     model_name = cfg["model_name"]
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    trust_remote_code = bool(cfg.get("trust_remote_code", False))
+
+    tokenizer_kwargs = {}
+    if trust_remote_code:
+        tokenizer_kwargs["trust_remote_code"] = True
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
     tokenizer.padding_side = "left"
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -85,6 +91,8 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
         "id2label": id2label,
         "label2id": label2id,
     }
+    if trust_remote_code:
+        load_kwargs["trust_remote_code"] = True
 
     qcfg = cfg.get("quantization")
     tp = cfg.get("training_params", {})

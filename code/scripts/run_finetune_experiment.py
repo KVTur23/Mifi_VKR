@@ -2,9 +2,10 @@
 """
 Run one server finetune experiment.
 
-This is the script version of notebooks/finetune.ipynb for Qwen3-32B QLoRA:
-it builds a runtime config, validates the expected Data files, runs training,
-and writes config/manifest artifacts next to the results.
+This is the script version of notebooks/finetune.ipynb for server QLoRA runs:
+it builds a runtime config from a base model JSON, validates the expected
+Data files, runs training, and writes config/manifest artifacts next to the
+results.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-BASE_CONFIG = PROJECT_ROOT / "config_models" / "finetune_configs" / "qwen3_32b_qlora.json"
+DEFAULT_BASE_CONFIG = PROJECT_ROOT / "config_models" / "finetune_configs" / "qwen3_32b_qlora.json"
 RESULTS_DIR = PROJECT_ROOT / "results"
 RUNTIME_CONFIG_DIR = PROJECT_ROOT / "Data" / "finetune_runtime_configs"
 
@@ -78,15 +79,42 @@ EXPERIMENTS = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run one Qwen3-32B QLoRA finetune experiment.")
+    parser = argparse.ArgumentParser(description="Run one QLoRA finetune experiment.")
     parser.add_argument("--run-name", required=True)
     parser.add_argument("--experiment", required=True, choices=sorted(EXPERIMENTS))
+    parser.add_argument(
+        "--base-config",
+        default=str(DEFAULT_BASE_CONFIG),
+        help=(
+            "Base finetune JSON. Absolute path, project-relative path, or filename "
+            "inside config_models/finetune_configs."
+        ),
+    )
     parser.add_argument(
         "--gpu",
         default="A100_40",
         choices=["T4", "L4", "A100_40", "A100_80", "H100"],
     )
     return parser.parse_args()
+
+
+def resolve_base_config(value: str) -> Path:
+    path = Path(value)
+    candidates = []
+    if path.is_absolute():
+        candidates.append(path)
+    else:
+        candidates.append(PROJECT_ROOT / path)
+        candidates.append(PROJECT_ROOT / "config_models" / "finetune_configs" / path)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(
+        "Base finetune config not found. Tried:\n  "
+        + "\n  ".join(str(candidate) for candidate in candidates)
+    )
 
 
 def deep_update(dst: dict, src: dict) -> dict:
@@ -136,8 +164,8 @@ def validate_data() -> dict:
     return stats
 
 
-def build_runtime_config(run_name: str, experiment: str) -> tuple[dict, Path]:
-    with open(BASE_CONFIG, "r", encoding="utf-8") as f:
+def build_runtime_config(run_name: str, experiment: str, base_config: Path) -> tuple[dict, Path]:
+    with open(base_config, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
     cfg["run_key"] = run_name
@@ -169,9 +197,10 @@ def write_manifest(manifest: dict) -> None:
 def main() -> None:
     os.chdir(PROJECT_ROOT)
     args = parse_args()
+    base_config = resolve_base_config(args.base_config)
 
     data_stats = validate_data()
-    cfg, config_path = build_runtime_config(args.run_name, args.experiment)
+    cfg, config_path = build_runtime_config(args.run_name, args.experiment, base_config)
 
     manifest = {
         "run_name": args.run_name,
@@ -182,6 +211,7 @@ def main() -> None:
         "gpu": args.gpu,
         "commit": git_commit(),
         "data_stats": data_stats,
+        "base_config": str(base_config),
         "config_path": str(config_path),
         "config": cfg,
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
