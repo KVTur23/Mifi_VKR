@@ -17,26 +17,34 @@ mkdir -p /mnt/pool/6/kvturanosov/VKR/augmentation_runs/rut5nllb_chunked_augment/
 mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache
 mkdir -p /tmp/kvt/cache/tmp /tmp/kvt/cache/triton /tmp/kvt/cache/torchinductor /tmp/kvt/cache/cuda
 
+REQUIRED_MODELS="
+models--Qwen--Qwen2.5-32B-Instruct-AWQ
+models--fyaronskiy--ruT5-large-paraphraser
+models--facebook--nllb-200-distilled-1.3B
+models--ai-forever--sbert_large_nlu_ru
+"
+
 if [ ! -f /tmp/kvt/models/.augmentation_copy_complete ]; then
     echo "copy needed augmentation models -> /tmp/kvt/models"
-    for MODEL_DIR in \
-        models--Qwen--Qwen2.5-32B-Instruct-AWQ \
-        models--fyaronskiy--ruT5-large-paraphraser \
-        models--facebook--nllb-200-3.3B \
-        models--facebook--nllb-200-distilled-1.3B \
-        models--ai-forever--sbert_large_nlu_ru
-    do
+    for MODEL_DIR in $REQUIRED_MODELS; do
         if [ -d "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" ]; then
             echo "copy $MODEL_DIR"
             cp -a "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" /tmp/kvt/models/
         else
-            echo "missing $MODEL_DIR"
+            echo "[ERROR] missing required model cache: $MODEL_DIR"
+            exit 1
         fi
     done
     [ -f /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG ] && cp -a /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG /tmp/kvt/models/
     date > /tmp/kvt/models/.augmentation_copy_complete
 else
     echo "augmentation models already copied"
+fi
+
+if [ -z "$(find /tmp/kvt/models/models--facebook--nllb-200-distilled-1.3B/snapshots -name config.json -print -quit 2>/dev/null)" ]; then
+    echo "[ERROR] incomplete NLLB cache in /tmp/kvt/models/models--facebook--nllb-200-distilled-1.3B"
+    echo "        expected snapshot/config.json"
+    exit 1
 fi
 
 echo "prepare /tmp/kvt/aug_rut5nllb_chunked_augment/code"
