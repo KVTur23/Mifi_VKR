@@ -6,7 +6,7 @@
       "rubert_batch_size": 16,
       "gpu_memory_utilization": 0.90,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-1.3B"
+      "nllb_model": "facebook/nllb-200-distilled-1.3B"
     },
     "L4": {
       "vram_gb": 24,
@@ -14,7 +14,7 @@
       "rubert_batch_size": 32,
       "gpu_memory_utilization": 0.90,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-1.3B"
+      "nllb_model": "facebook/nllb-200-distilled-1.3B"
     },
     "A100_40": {
       "vram_gb": 40,
@@ -22,7 +22,7 @@
       "rubert_batch_size": 64,
       "gpu_memory_utilization": 0.92,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-1.3B"
+      "nllb_model": "facebook/nllb-200-distilled-1.3B"
     },
     "A100_80": {
       "vram_gb": 80,
@@ -30,7 +30,7 @@
       "rubert_batch_size": 64,
       "gpu_memory_utilization": 0.95,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-1.3B"
+      "nllb_model": "facebook/nllb-200-distilled-1.3B"
     },
     "H100": {
       "vram_gb": 80,
@@ -38,7 +38,7 @@
       "rubert_batch_size": 64,
       "gpu_memory_utilization": 0.95,
       "enforce_eager": true,
-      "nllb_model": "facebook/nllb-200-1.3B"
+      "nllb_model": "facebook/nllb-200-distilled-1.3B"
     }
   },
   "pipeline": {
