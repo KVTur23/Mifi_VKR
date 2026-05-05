@@ -40,7 +40,7 @@ from src.augmentation.validation import validate_generated_texts
 STAGE = 2
 TARGET_COUNT = 35
 MAX_RETRIES = 5
-OVERSAMPLE_FACTOR = 5
+OVERSAMPLE_FACTOR = 1
 RUT5_JUDGE_MIN_SCORE = 4.5
 USE_JUDGE = True
 RUT5_MIN_TEXT_LENGTH = 250
@@ -83,12 +83,12 @@ def augment_class(
 
     for attempt in range(1, MAX_RETRIES + 1):
         global_attempt = generation_attempt_offset + attempt
-        pool_target = max(n_needed * 2, n_needed)
+        pool_target = n_needed
         if len(candidate_pairs) >= pool_target:
             break
 
         pool_gap = pool_target - len(candidate_pairs)
-        batch_size = max(pool_gap, 1) * OVERSAMPLE_FACTOR + 1
+        batch_size = max(pool_gap, 1) * OVERSAMPLE_FACTOR
         sources = _select_sources(paraphrase_sources, batch_size)
         temperature = _temperature_for_attempt(
             base_temperature=paraphraser.cfg.temperature,

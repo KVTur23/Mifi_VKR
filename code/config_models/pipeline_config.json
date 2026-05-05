@@ -51,7 +51,7 @@
     "stage2": {
       "target_count": 35,
       "max_retries": 3,
-      "oversample_factor": 2,
+      "oversample_factor": 1,
       "originals_only_sources": true,
       "judge_min_score": 4.5,
       "use_judge": false,
@@ -83,7 +83,7 @@
     "stage3": {
       "target_count": 50,
       "max_retries": 20,
-      "oversample_factor": 3,
+      "oversample_factor": 1,
       "min_judge_score": 2.5,
       "originals_only_sources": true,
       "validation_min_text_length": 250,

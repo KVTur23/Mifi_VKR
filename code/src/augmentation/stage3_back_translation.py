@@ -45,7 +45,7 @@ TARGET_COUNT = 50
 MAX_RETRIES = 20
 MODEL_NLLB = "facebook/nllb-200-1.3B"
 BATCH_SIZE = 64
-OVERSAMPLE_FACTOR = 3
+OVERSAMPLE_FACTOR = 1
 MIN_JUDGE_SCORE_STAGE3 = 2.5
 TRANSLATION_MIN_TEXT_LENGTH = 250
 TRANSLATION_MIN_LENGTH_RATIO = 0.35
@@ -481,7 +481,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             }
 
         needs_translation = any(
-            len(state["accepted_pairs"]) < state["n_needed"] * 2
+            len(state["accepted_pairs"]) < state["n_needed"]
             for state in class_state.values()
         )
 
@@ -493,7 +493,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 for attempt in range(1, MAX_RETRIES + 1):
                     pending = {
                         name: state for name, state in class_state.items()
-                        if len(state["accepted_pairs"]) < state["n_needed"] * 2
+                        if len(state["accepted_pairs"]) < state["n_needed"]
                     }
                     if not pending:
                         break
@@ -505,7 +505,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                     source_class: list[str] = []
 
                     for class_name, state in pending.items():
-                        pool_gap = state["n_needed"] * 2 - len(state["accepted_pairs"])
+                        pool_gap = state["n_needed"] - len(state["accepted_pairs"])
                         n_to_generate = max(pool_gap, 1) * OVERSAMPLE_FACTOR
                         sources = select_sources(state["bt_sources"], n_to_generate)
                         all_sources.extend(sources)
