@@ -18,6 +18,8 @@ RUNS="
 reaug_qwen3_32b_qlora_cw
 reaug_qwen3_32b_qlora_cw_r32
 reaug_qwen3_32b_qlora_cw_focal_g2
+reaug_qwen3_32b_qlora_no_cw_r32
+reaug_qwen3_32b_qlora_cw_r32_hier_l03
 "
 
 echo "=== common pre | re-augmentation | $(date) ==="
