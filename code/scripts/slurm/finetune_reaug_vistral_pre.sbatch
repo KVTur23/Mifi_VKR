@@ -27,15 +27,18 @@ echo "=== common pre | Vistral-24B | $(date) ==="
 mkdir -p "$BASE_RUN_DIR/reaug_vistral_24b_pre/logs"
 mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 
-if [ -f "$MODEL_MARKER" ] && [ -d "/tmp/kvt/models/$MODEL_DIR" ]; then
+if [ -f "$MODEL_MARKER" ] && \
+   [ -d "/tmp/kvt/models/$MODEL_DIR" ] && \
+   [ -n "$(find "/tmp/kvt/models/$MODEL_DIR/snapshots" -name config.json -print -quit 2>/dev/null)" ]; then
     echo "model already copied: $MODEL_DIR"
 else
     if [ ! -d "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" ]; then
         echo "[ERROR] missing model cache: /mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR"
         exit 1
     fi
-    echo "copy model -> /tmp/kvt/models/$MODEL_DIR"
-    cp -a "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" /tmp/kvt/models/
+    echo "copy/update model -> /tmp/kvt/models/$MODEL_DIR"
+    mkdir -p "/tmp/kvt/models/$MODEL_DIR"
+    cp -a "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/." "/tmp/kvt/models/$MODEL_DIR/"
     [ -f /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG ] && cp -a /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG /tmp/kvt/models/
     date > "$MODEL_MARKER"
 fi
