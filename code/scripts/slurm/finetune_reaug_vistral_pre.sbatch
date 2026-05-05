@@ -36,6 +36,12 @@ else
         echo "[ERROR] missing model cache: /mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR"
         exit 1
     fi
+    if [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name config.json -print -quit 2>/dev/null)" ] || \
+       [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name tokenizer_config.json -print -quit 2>/dev/null)" ]; then
+        echo "[ERROR] incomplete model cache: /mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR"
+        echo "        expected snapshot/config.json and snapshot/tokenizer_config.json"
+        exit 1
+    fi
     echo "copy/update model -> /tmp/kvt/models/$MODEL_DIR"
     mkdir -p "/tmp/kvt/models/$MODEL_DIR"
     cp -a "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/." "/tmp/kvt/models/$MODEL_DIR/"
