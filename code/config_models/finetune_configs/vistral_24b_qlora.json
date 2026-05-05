@@ -5,6 +5,9 @@
   "num_labels": 36,
   "max_seq_length": 2048,
   "trust_remote_code": true,
+  "tokenizer_kwargs": {
+    "fix_mistral_regex": true
+  },
   "peft_config": {
     "r": 16,
     "lora_alpha": 32,

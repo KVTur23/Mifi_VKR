@@ -30,7 +30,10 @@ mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 if [ -f "$MODEL_MARKER" ] && \
    [ -d "/tmp/kvt/models/$MODEL_DIR" ] && \
    [ -n "$(find "/tmp/kvt/models/$MODEL_DIR/snapshots" -name config.json -print -quit 2>/dev/null)" ] && \
-   [ -n "$(find "/tmp/kvt/models/$MODEL_DIR/snapshots" -name tokenizer_config.json -print -quit 2>/dev/null)" ]; then
+   [ -n "$(find "/tmp/kvt/models/$MODEL_DIR/snapshots" -name tokenizer_config.json -print -quit 2>/dev/null)" ] && \
+   { [ -n "$(find "/tmp/kvt/models/$MODEL_DIR/snapshots" -name model.safetensors -print -quit 2>/dev/null)" ] || \
+     [ -n "$(find "/tmp/kvt/models/$MODEL_DIR/snapshots" -name model.safetensors.index.json -print -quit 2>/dev/null)" ] || \
+     [ -n "$(find "/tmp/kvt/models/$MODEL_DIR/snapshots" -name pytorch_model.bin -print -quit 2>/dev/null)" ]; }; then
     echo "model already copied: $MODEL_DIR"
 else
     if [ ! -d "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" ]; then
@@ -38,9 +41,12 @@ else
         exit 1
     fi
     if [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name config.json -print -quit 2>/dev/null)" ] || \
-       [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name tokenizer_config.json -print -quit 2>/dev/null)" ]; then
+       [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name tokenizer_config.json -print -quit 2>/dev/null)" ] || \
+       { [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name model.safetensors -print -quit 2>/dev/null)" ] && \
+         [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name model.safetensors.index.json -print -quit 2>/dev/null)" ] && \
+         [ -z "$(find "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR/snapshots" -name pytorch_model.bin -print -quit 2>/dev/null)" ]; }; then
         echo "[ERROR] incomplete model cache: /mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR"
-        echo "        expected snapshot/config.json and snapshot/tokenizer_config.json"
+        echo "        expected config/tokenizer plus model.safetensors or model.safetensors.index.json"
         exit 1
     fi
     echo "copy/update model -> /tmp/kvt/models/$MODEL_DIR"
