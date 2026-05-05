@@ -157,6 +157,8 @@ class RuT5Paraphraser:
                 self.cfg.output_max_tokens,
             )
             max_length = max(max_length, 32)
+            min_length = max(int(min(batch_counts) * 0.7), 16)
+            min_length = min(min_length, max_length - 1)
 
             inputs = self.tokenizer(
                 batch,
@@ -169,6 +171,7 @@ class RuT5Paraphraser:
                 generated = self.model.generate(
                     **inputs,
                     max_length=max_length,
+                    min_length=min_length,
                     num_beams=self.cfg.num_beams,
                     do_sample=generation_do_sample,
                     temperature=generation_temperature,
