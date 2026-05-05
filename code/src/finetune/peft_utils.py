@@ -101,7 +101,7 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
 
     trust_remote_code = bool(cfg.get("trust_remote_code", False))
 
-    tokenizer_kwargs = {}
+    tokenizer_kwargs = dict(cfg.get("tokenizer_kwargs", {}))
     if trust_remote_code:
         tokenizer_kwargs["trust_remote_code"] = True
 
