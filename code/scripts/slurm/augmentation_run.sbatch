@@ -18,6 +18,7 @@ export XDG_CACHE_HOME=/tmp/kvt/cache
 export HF_HOME=/tmp/kvt/hf
 export HF_HUB_CACHE=/tmp/kvt/models
 export HUGGINGFACE_HUB_CACHE=/tmp/kvt/models
+export AUG_POOL_DATA_DIR=/mnt/pool/6/kvturanosov/VKR/augmentation_runs/rut5nllb_chunked_augment/Data
 export TMPDIR=/tmp/kvt/cache/tmp
 export TRITON_CACHE_DIR=/tmp/kvt/cache/triton
 export TORCHINDUCTOR_CACHE_DIR=/tmp/kvt/cache/torchinductor
@@ -28,7 +29,7 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
-mkdir -p "$TMPDIR" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR" "$CUDA_CACHE_PATH"
+mkdir -p "$AUG_POOL_DATA_DIR" "$TMPDIR" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR" "$CUDA_CACHE_PATH"
 
 source /mnt/pool/6/kvturanosov/VKR/venv/bin/activate
 cd /tmp/kvt/aug_rut5nllb_chunked_augment/code

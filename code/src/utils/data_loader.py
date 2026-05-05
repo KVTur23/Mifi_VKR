@@ -10,6 +10,8 @@ data_loader.py — Загрузка данных и работа с чекпои
 чтобы понять, каким классам ещё требуется аугментация.
 """
 
+import os
+import shutil
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -106,7 +108,64 @@ def save_checkpoint(df: pd.DataFrame, stage: int, data_dir: str | Path | None = 
     file_path = data_dir / STAGE_FILES[stage]
     df.to_csv(file_path, index=False)
     print(f"[Данные] Сохранён чекпоинт этапа {stage}: {file_path.name} ({len(df)} записей)")
+    mirror_file_to_aug_pool(file_path)
     return file_path
+
+
+def mirror_file_to_aug_pool(file_path: str | Path, prefix: str = "[Данные]") -> Path | None:
+    """
+    Copies a live augmentation artifact from /tmp/kvt back to the pool run Data dir.
+
+    SLURM jobs keep the active workspace in fast tmp storage. If vLLM/NLLB fails
+    before post.sbatch runs, the latest cache/checkpoint would otherwise be lost.
+    The pool target is enabled only when AUG_POOL_DATA_DIR is set by sbatch.
+    """
+    pool_data_dir = os.environ.get("AUG_POOL_DATA_DIR")
+    if not pool_data_dir:
+        return None
+
+    src = Path(file_path)
+    if not src.exists():
+        return None
+
+    dst_dir = Path(pool_data_dir)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / src.name
+
+    try:
+        if src.resolve() == dst.resolve():
+            return dst
+    except OSError:
+        pass
+
+    tmp = dst.with_name(f"{dst.name}.tmp")
+    try:
+        shutil.copy2(src, tmp)
+        tmp.replace(dst)
+        print(f"{prefix} Зеркальная копия в pool: {dst}")
+        return dst
+    except Exception as e:
+        print(f"{prefix} Не удалось скопировать {src.name} в pool: {e}")
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return None
+
+
+def remove_aug_pool_file(filename: str, prefix: str = "[Данные]") -> None:
+    """Removes a stale live artifact from AUG_POOL_DATA_DIR if pool mirroring is enabled."""
+    pool_data_dir = os.environ.get("AUG_POOL_DATA_DIR")
+    if not pool_data_dir:
+        return
+
+    path = Path(pool_data_dir) / filename
+    try:
+        if path.exists():
+            path.unlink()
+            print(f"{prefix} Удалён live-файл из pool: {path}")
+    except Exception as e:
+        print(f"{prefix} Не удалось удалить {path}: {e}")
 
 
 def get_class_distribution(df: pd.DataFrame) -> pd.Series:

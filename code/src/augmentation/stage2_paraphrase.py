@@ -30,7 +30,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.utils.data_loader import (
     load_dataset, save_checkpoint, get_class_distribution,
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
-    DATA_DIR,
+    DATA_DIR, mirror_file_to_aug_pool, remove_aug_pool_file,
 )
 from src.augmentation.llm_utils import load_llm, select_top_paraphrases
 from src.augmentation.rut5_paraphraser import RuT5Paraphraser
@@ -263,6 +263,7 @@ def _save_pairs_cache(class_pools: dict[str, dict]) -> None:
 
     pd.DataFrame(rows).to_csv(_PAIRS_CSV, index=False)
     print(f"[Этап 2][Кэш] Сохранено {len(rows)} кандидатов в {_PAIRS_CSV.name}")
+    mirror_file_to_aug_pool(_PAIRS_CSV, prefix="[Этап 2][Кэш]")
 
 
 def _archive_pairs_cache(cycle: int) -> None:
@@ -274,6 +275,8 @@ def _archive_pairs_cache(cycle: int) -> None:
     backup = _PAIRS_CSV.with_name(f"_stage2_pairs_cache_cycle{cycle}_{stamp}.bak.csv")
     _PAIRS_CSV.rename(backup)
     print(f"[Этап 2][Кэш] Пул кандидатов обработан → {backup.name}")
+    mirror_file_to_aug_pool(backup, prefix="[Этап 2][Кэш]")
+    remove_aug_pool_file(_PAIRS_CSV.name, prefix="[Этап 2][Кэш]")
 
 
 def run(config_path: str, pipeline_cfg=None) -> None:

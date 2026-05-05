@@ -32,7 +32,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.utils.data_loader import (
     load_dataset, save_checkpoint, get_class_distribution,
     get_classes_to_augment, TEXT_COL, LABEL_COL, RANDOM_SEED,
-    DATA_DIR, STAGE_FILES,
+    DATA_DIR, STAGE_FILES, mirror_file_to_aug_pool, remove_aug_pool_file,
 )
 from src.augmentation.text_chunking import chunk_text, join_chunks
 from src.augmentation.validation import SIMILARITY_THRESHOLD, validate_generated_texts
@@ -117,6 +117,7 @@ def _save_pairs_cache(class_state: dict[str, dict], pivot_lang: str) -> None:
 
     pd.DataFrame(rows).to_csv(_PAIRS_CSV, index=False)
     print(f"  [Кэш] {pivot_lang}: сохранено {len(rows)} пар в {_PAIRS_CSV.name}")
+    mirror_file_to_aug_pool(_PAIRS_CSV, prefix="[Этап 3][Кэш]")
 
 
 def _archive_pairs_cache(pivot_round: int, pivot_lang: str) -> None:
@@ -130,6 +131,8 @@ def _archive_pairs_cache(pivot_round: int, pivot_lang: str) -> None:
     )
     _PAIRS_CSV.rename(backup)
     print(f"[Этап 3][{pivot_lang}] Кэш пар обработан → {backup.name}")
+    mirror_file_to_aug_pool(backup, prefix="[Этап 3][Кэш]")
+    remove_aug_pool_file(_PAIRS_CSV.name, prefix="[Этап 3][Кэш]")
 
 
 def load_translation_models() -> tuple:
