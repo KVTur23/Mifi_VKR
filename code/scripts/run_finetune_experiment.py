@@ -51,6 +51,29 @@ EXPERIMENTS = {
             "focal_gamma": 2.0,
         },
     },
+    "no_cw_r32": {
+        "description": "no class weights, LoRA r=32 alpha=64",
+        "overrides": {
+            "use_class_weights": False,
+            "peft_config": {
+                "r": 32,
+                "lora_alpha": 64,
+            },
+        },
+    },
+    "cw_r32_hier_l03": {
+        "description": "class weights, LoRA r=32 alpha=64, hierarchy regularizer lambda=0.3",
+        "overrides": {
+            "use_class_weights": True,
+            "val_split": 0.10,
+            "use_hierarchy": True,
+            "hierarchy_lambda": 0.3,
+            "peft_config": {
+                "r": 32,
+                "lora_alpha": 64,
+            },
+        },
+    },
 }
 
 
