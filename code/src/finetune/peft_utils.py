@@ -57,6 +57,27 @@ def _quantized_load_controls(pipeline_cfg) -> dict:
     return {"max_memory": {0: f"{usable_gb}GiB"}}
 
 
+def _resolve_hf_snapshot(model_name: str) -> str:
+    """Возвращает локальный snapshot из HF cache, если online lookup отключён."""
+    cache_dir = (
+        os.environ.get("HF_HUB_CACHE")
+        or os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("HF_HOME")
+    )
+    if not cache_dir:
+        return model_name
+
+    repo_dir = Path(cache_dir) / f"models--{model_name.replace('/', '--')}"
+    snapshots = repo_dir / "snapshots"
+    if not snapshots.exists():
+        return model_name
+
+    dirs = sorted(path for path in snapshots.iterdir() if path.is_dir())
+    if not dirs:
+        return model_name
+    return str(dirs[-1])
+
+
 def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
                     id2label: dict, label2id: dict):
     """
@@ -74,6 +95,9 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     model_name = cfg["model_name"]
+    load_path = _resolve_hf_snapshot(model_name)
+    if load_path != model_name:
+        print(f"[ModelLoad] local snapshot: {model_name} -> {load_path}")
 
     trust_remote_code = bool(cfg.get("trust_remote_code", False))
 
@@ -81,7 +105,7 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
     if trust_remote_code:
         tokenizer_kwargs["trust_remote_code"] = True
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
+    tokenizer = AutoTokenizer.from_pretrained(load_path, **tokenizer_kwargs)
     tokenizer.padding_side = "left"
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -126,7 +150,7 @@ def load_base_model(cfg: dict, pipeline_cfg, num_labels: int,
         elif tp.get("fp16"):
             load_kwargs["torch_dtype"] = torch.float16
 
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, **load_kwargs)
+    model = AutoModelForSequenceClassification.from_pretrained(load_path, **load_kwargs)
     model.config.pad_token_id = tokenizer.pad_token_id
 
     if tp.get("gradient_checkpointing"):
