@@ -52,6 +52,7 @@ SMALL_CLASS_TEMPERATURE = 0.95
 TEMPERATURE_INCREASE_AFTER_ATTEMPT = 3
 TEMPERATURE_STEP = 0.05
 MAX_TEMPERATURE = 1.10
+ZERO_BATCH_BREAK_LIMIT = 5  # выходим из раунда после N безуспешных батчей подряд
 
 _PAIRS_CSV = DATA_DIR / "_stage2_pairs_cache.csv"
 
@@ -102,6 +103,7 @@ def augment_class(
         received_total = 0
         valid_total = 0
         added_total = 0
+        consecutive_zero_batches = 0
         source_batch_size = max(1, paraphraser.cfg.batch_size)
 
         for batch_start in range(0, len(sources), source_batch_size):
@@ -118,6 +120,10 @@ def augment_class(
             received_total += len(pairs)
 
             if not pairs:
+                consecutive_zero_batches += 1
+                if consecutive_zero_batches >= ZERO_BATCH_BREAK_LIMIT:
+                    print(f"  [Раунд {attempt}] {ZERO_BATCH_BREAK_LIMIT} пустых батчей подряд — выходим из раунда")
+                    break
                 continue
 
             paraphrased = [p[0] for p in pairs]
@@ -144,6 +150,14 @@ def augment_class(
             candidate_pairs.extend(valid_pairs)
             current_existing.extend([p[0] for p in valid_pairs])
             added_total += len(valid_pairs)
+
+            if valid_pairs:
+                consecutive_zero_batches = 0
+            else:
+                consecutive_zero_batches += 1
+                if consecutive_zero_batches >= ZERO_BATCH_BREAK_LIMIT:
+                    print(f"  [Раунд {attempt}] {ZERO_BATCH_BREAK_LIMIT} безуспешных батчей подряд — выходим из раунда")
+                    break
 
             if cache_callback is not None and valid_pairs:
                 cache_callback(candidate_pairs)

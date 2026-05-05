@@ -21,7 +21,8 @@ from langdetect import detect, LangDetectException
 # --- Настройки ---
 
 SIMILARITY_THRESHOLD = 0.95  # Верхний порог косинусного сходства (слишком похож → копия)
-SIMILARITY_THRESHOLD_LOW = 0.98  # Мягкий порог для классов с 1 оригинальным примером
+SIMILARITY_THRESHOLD_LOW = 0.99  # Мягкий порог для классов с ≤2 оригиналами (парафразы одного источника естественно похожи)
+SIMILARITY_THRESHOLD_MID = 0.97  # Средний порог для классов с 3–4 оригиналами
 SIMILARITY_THRESHOLD_MIN = 0.5   # Нижний порог (слишком далёк → текст исказился до неузнаваемости)
 MIN_TEXT_LENGTH = 500        # Минимальная длина в символах (медиана оригинала ~1255)
 SBERT_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"  # Русскоязычная SBERT для эмбеддингов
@@ -105,6 +106,11 @@ def validate_generated_texts(
         texts = filter_prompt_leak(texts, class_name)
 
     threshold = similarity_threshold
+    if n_original is not None:
+        if n_original <= 2:
+            threshold = max(threshold, SIMILARITY_THRESHOLD_LOW)
+        elif n_original <= 4:
+            threshold = max(threshold, SIMILARITY_THRESHOLD_MID)
 
     # Косинусное сходство
     if texts and existing_texts:

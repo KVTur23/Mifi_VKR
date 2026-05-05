@@ -51,7 +51,7 @@
     "stage2": {
       "target_count": 35,
       "max_retries": 3,
-      "oversample_factor": 5,
+      "oversample_factor": 2,
       "originals_only_sources": true,
       "judge_min_score": 4.5,
       "validation_min_text_length": 250,
@@ -61,7 +61,7 @@
       "final_fill_below_threshold": true,
       "paraphraser": {
         "model": "fyaronskiy/ruT5-large-paraphraser",
-        "batch_size": 8,
+        "batch_size": 16,
         "chunk_max_tokens": 320,
         "output_length_factor": 2.5,
         "output_max_tokens": 1024,
