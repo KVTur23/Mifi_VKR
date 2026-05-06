@@ -1,0 +1,1077 @@
+
+
+
+=====++++++++++++++++++++++++ FT PRE ++++++++++++++++++++++++=====
+
+
+
+=== common pre | re-augmentation | Mon May  4 10:36:47 PM MSK 2026 ===
+copy needed finetune models -> /tmp/kvt/models
+copy models--Qwen--Qwen3-32B
+
+=== prepare reaug_qwen3_32b_qlora_cw ===
+copy code -> /tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw/code
+copy branch Data -> run
+copy run Data -> tmp
+total 35M
+drwxr-xr-x  3 kvturanosov users 4.0K May  4 22:35 .
+drwxr-xr-x 12 kvturanosov users 4.0K May  4 22:46 ..
+-rw-r--r--  1 kvturanosov users 4.5M May  4 22:35 data_after_eda.csv
+-rw-r--r--  1 kvturanosov users 4.5M May  4 22:35 data_after_eda_old.csv
+-rw-r--r--  1 kvturanosov users 4.0M May  4 22:35 data_after_stage1.csv
+-rw-r--r--  1 kvturanosov users 5.0M May  4 22:35 data_after_stage2.csv
+-rw-r--r--  1 kvturanosov users 5.5M May  4 22:35 data_after_stage3.csv
+-rw-r--r--  1 kvturanosov users 7.3M May  4 22:35 data.json
+-rw-r--r--  1 kvturanosov users 909K May  4 22:35 data_test.csv
+drwxr-xr-x  2 kvturanosov users 4.0K May  4 22:46 finetune_checkpoints
+-rw-r--r--  1 kvturanosov users 3.6M May  4 22:35 train_after_eda.csv
+
+=== prepare reaug_qwen3_32b_qlora_cw_r32 ===
+copy code -> /tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw_r32/code
+copy branch Data -> run
+copy run Data -> tmp
+total 35M
+drwxr-xr-x  3 kvturanosov users 4.0K May  4 22:35 .
+drwxr-xr-x 12 kvturanosov users 4.0K May  4 22:46 ..
+-rw-r--r--  1 kvturanosov users 4.5M May  4 22:35 data_after_eda.csv
+-rw-r--r--  1 kvturanosov users 4.5M May  4 22:35 data_after_eda_old.csv
+-rw-r--r--  1 kvturanosov users 4.0M May  4 22:35 data_after_stage1.csv
+-rw-r--r--  1 kvturanosov users 5.0M May  4 22:35 data_after_stage2.csv
+-rw-r--r--  1 kvturanosov users 5.5M May  4 22:35 data_after_stage3.csv
+-rw-r--r--  1 kvturanosov users 7.3M May  4 22:35 data.json
+-rw-r--r--  1 kvturanosov users 909K May  4 22:35 data_test.csv
+drwxr-xr-x  2 kvturanosov users 4.0K May  4 22:46 finetune_checkpoints
+-rw-r--r--  1 kvturanosov users 3.6M May  4 22:35 train_after_eda.csv
+
+=== prepare reaug_qwen3_32b_qlora_cw_focal_g2 ===
+copy code -> /tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw_focal_g2/code
+copy branch Data -> run
+copy run Data -> tmp
+total 35M
+drwxr-xr-x  3 kvturanosov users 4.0K May  4 22:35 .
+drwxr-xr-x 12 kvturanosov users 4.0K May  4 22:46 ..
+-rw-r--r--  1 kvturanosov users 4.5M May  4 22:35 data_after_eda.csv
+-rw-r--r--  1 kvturanosov users 4.5M May  4 22:35 data_after_eda_old.csv
+-rw-r--r--  1 kvturanosov users 4.0M May  4 22:35 data_after_stage1.csv
+-rw-r--r--  1 kvturanosov users 5.0M May  4 22:35 data_after_stage2.csv
+-rw-r--r--  1 kvturanosov users 5.5M May  4 22:35 data_after_stage3.csv
+-rw-r--r--  1 kvturanosov users 7.3M May  4 22:35 data.json
+-rw-r--r--  1 kvturanosov users 909K May  4 22:35 data_test.csv
+drwxr-xr-x  2 kvturanosov users 4.0K May  4 22:46 finetune_checkpoints
+-rw-r--r--  1 kvturanosov users 3.6M May  4 22:35 train_after_eda.csv
+
+common pre ready
+
+
+
+=====++++++++++++++++++++++++ FT CW RUN 28533 ++++++++++++++++++++++++=====
+
+
+
+=== run | reaug_qwen3_32b_qlora_cw | SLURM 28533 | host=t2n1 | Mon May  4 10:46:33 PM MSK 2026 ===
+Mon May  4 22:46:34 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:41:00.0 Off |                    0 |
+| N/A   22C    P0             34W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.13.5
+================================================================================
+FINETUNE EXPERIMENT
+================================================================================
+{
+  "run_name": "reaug_qwen3_32b_qlora_cw",
+  "experiment": "cw",
+  "description": "class weights, base LoRA rank",
+  "started_at": "2026-05-04T22:46:43",
+  "project_root": "/tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw/code",
+  "gpu": "A100_40",
+  "commit": "3d64f1dff0735206c7d05cdadcfae7f03f30ab36",
+  "data_stats": {
+    "data_after_stage3.csv": {
+      "rows": 2331,
+      "labels": 36
+    },
+    "data_test.csv": {
+      "rows": 341,
+      "labels": 36
+    },
+    "train_after_eda.csv": {
+      "rows": 1409,
+      "labels": 36
+    }
+  },
+  "config_path": "/tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw/code/Data/finetune_runtime_configs/reaug_qwen3_32b_qlora_cw.json",
+  "config": {
+    "model_name": "Qwen/Qwen3-32B",
+    "method": "qlora",
+    "task_type": "SEQ_CLS",
+    "num_labels": 36,
+    "max_seq_length": 2048,
+    "peft_config": {
+      "r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05,
+      "bias": "none",
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ],
+      "modules_to_save": [
+        "score"
+      ]
+    },
+    "quantization": {
+      "load_in_4bit": true,
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_compute_dtype": "bfloat16",
+      "bnb_4bit_use_double_quant": true
+    },
+    "training_params": {
+      "num_train_epochs": 8,
+      "per_device_train_batch_size": 2,
+      "per_device_eval_batch_size": 4,
+      "gradient_accumulation_steps": 8,
+      "learning_rate": 0.0002,
+      "lr_scheduler_type": "cosine",
+      "warmup_ratio": 0.03,
+      "weight_decay": 0.01,
+      "optim": "adamw_torch",
+      "gradient_checkpointing": true,
+      "max_grad_norm": 1.0,
+      "logging_steps": 10,
+      "save_strategy": "epoch",
+      "eval_strategy": "epoch",
+      "load_best_model_at_end": true,
+      "metric_for_best_model": "macro_f1",
+      "greater_is_better": true,
+      "save_total_limit": 2,
+      "bf16": true,
+      "seed": 42
+    },
+    "run_key": "reaug_qwen3_32b_qlora_cw",
+    "use_class_weights": true,
+    "val_split": 0.1,
+    "eval_test_each_epoch": true,
+    "loss": "ce"
+  },
+  "slurm_job_id": "28533"
+}
+[Данные] Найден чекпоинт этапа 3: data_after_stage3.csv (2331 записей)
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+[Данные] Найден чекпоинт этапа 0: train_after_eda.csv (1409 записей)
+[ClassWeights] enabled. range=[0.329, 1.408], mean=1.156
+[Split] train=2097 | val=234 (val_split=0.1) | test=341 (held out)
+[ModelLoad] 4bit QLoRA: device_map=auto, max_memory={0: '36GiB'}, async_load=off
+trainable params: 134,402,048 || all params: 32,118,797,312 || trainable%: 0.4185
+[Loss] CrossEntropy
+[TestEval] enabled — добавляет ~2-3 мин на эпоху, пишет в Data/finetune_checkpoints/reaug_qwen3_32b_qlora_cw/test_curve.csv
+{'loss': '56.61', 'grad_norm': '405.2', 'learning_rate': '5.625e-05', 'epoch': '0.07626'}
+{'loss': '43.45', 'grad_norm': '3123', 'learning_rate': '0.0001187', 'epoch': '0.1525'}
+{'loss': '32.91', 'grad_norm': '254.4', 'learning_rate': '0.0001813', 'epoch': '0.2288'}
+{'loss': '30.74', 'grad_norm': '228.7', 'learning_rate': '0.0002', 'epoch': '0.3051'}
+{'loss': '27.05', 'grad_norm': '220.7', 'learning_rate': '0.0001999', 'epoch': '0.3813'}
+{'loss': '26.39', 'grad_norm': '164.7', 'learning_rate': '0.0001997', 'epoch': '0.4576'}
+{'loss': '25.14', 'grad_norm': '156.6', 'learning_rate': '0.0001994', 'epoch': '0.5338'}
+{'loss': '23.85', 'grad_norm': '172.3', 'learning_rate': '0.000199', 'epoch': '0.6101'}
+{'loss': '22.7', 'grad_norm': '179.8', 'learning_rate': '0.0001985', 'epoch': '0.6864'}
+{'loss': '21.31', 'grad_norm': '181', 'learning_rate': '0.0001979', 'epoch': '0.7626'}
+{'loss': '17.41', 'grad_norm': '123.5', 'learning_rate': '0.0001972', 'epoch': '0.8389'}
+{'loss': '14.93', 'grad_norm': '99.43', 'learning_rate': '0.0001965', 'epoch': '0.9152'}
+{'loss': '11.95', 'grad_norm': '165.6', 'learning_rate': '0.0001956', 'epoch': '0.9914'}
+[TestEval] E1.0: bal_acc=0.3110, macro_f1=0.3005, f1_A=0.4628, f1_B=0.3837, f1_C=0.2000
+{'eval_loss': '1.602', 'eval_balanced_accuracy': '0.55', 'eval_macro_f1': '0.5507', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.313', 'eval_steps_per_second': '0.583', 'epoch': '1'}
+{'loss': '7.056', 'grad_norm': '114.7', 'learning_rate': '0.0001947', 'epoch': '1.061'}
+{'loss': '7.356', 'grad_norm': '96.79', 'learning_rate': '0.0001936', 'epoch': '1.137'}
+{'loss': '5.11', 'grad_norm': '93.07', 'learning_rate': '0.0001925', 'epoch': '1.214'}
+{'loss': '6.548', 'grad_norm': '125.2', 'learning_rate': '0.0001913', 'epoch': '1.29'}
+{'loss': '5.478', 'grad_norm': '286.7', 'learning_rate': '0.00019', 'epoch': '1.366'}
+{'loss': '5.837', 'grad_norm': '159', 'learning_rate': '0.0001886', 'epoch': '1.442'}
+{'loss': '7.136', 'grad_norm': '57.22', 'learning_rate': '0.0001872', 'epoch': '1.519'}
+{'loss': '5.986', 'grad_norm': '110.8', 'learning_rate': '0.0001856', 'epoch': '1.595'}
+{'loss': '5.28', 'grad_norm': '42.49', 'learning_rate': '0.000184', 'epoch': '1.671'}
+{'loss': '5.173', 'grad_norm': '135.8', 'learning_rate': '0.0001823', 'epoch': '1.747'}
+{'loss': '7.694', 'grad_norm': '94.47', 'learning_rate': '0.0001805', 'epoch': '1.824'}
+{'loss': '7.405', 'grad_norm': '80.55', 'learning_rate': '0.0001786', 'epoch': '1.9'}
+{'loss': '5.691', 'grad_norm': '77.08', 'learning_rate': '0.0001767', 'epoch': '1.976'}
+[TestEval] E2.0: bal_acc=0.4983, macro_f1=0.4820, f1_A=0.7330, f1_B=0.4479, f1_C=0.5056
+{'eval_loss': '0.777', 'eval_balanced_accuracy': '0.7664', 'eval_macro_f1': '0.7524', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.311', 'eval_steps_per_second': '0.583', 'epoch': '2'}
+{'loss': '2.356', 'grad_norm': '70.24', 'learning_rate': '0.0001747', 'epoch': '2.046'}
+{'loss': '0.6054', 'grad_norm': '42.56', 'learning_rate': '0.0001726', 'epoch': '2.122'}
+{'loss': '0.8123', 'grad_norm': '39.22', 'learning_rate': '0.0001705', 'epoch': '2.198'}
+{'loss': '0.9689', 'grad_norm': '68.8', 'learning_rate': '0.0001683', 'epoch': '2.275'}
+{'loss': '1.951', 'grad_norm': '28.96', 'learning_rate': '0.000166', 'epoch': '2.351'}
+{'loss': '2.35', 'grad_norm': '131.3', 'learning_rate': '0.0001637', 'epoch': '2.427'}
+{'loss': '1.633', 'grad_norm': '47.12', 'learning_rate': '0.0001613', 'epoch': '2.503'}
+{'loss': '2.016', 'grad_norm': '40.93', 'learning_rate': '0.0001588', 'epoch': '2.58'}
+{'loss': '3.83', 'grad_norm': '120.3', 'learning_rate': '0.0001563', 'epoch': '2.656'}
+{'loss': '2.906', 'grad_norm': '120.1', 'learning_rate': '0.0001538', 'epoch': '2.732'}
+{'loss': '2.96', 'grad_norm': '65.95', 'learning_rate': '0.0001511', 'epoch': '2.808'}
+{'loss': '1.387', 'grad_norm': '39.14', 'learning_rate': '0.0001485', 'epoch': '2.885'}
+{'loss': '1.621', 'grad_norm': '32.37', 'learning_rate': '0.0001458', 'epoch': '2.961'}
+[TestEval] E3.0: bal_acc=0.5119, macro_f1=0.4735, f1_A=0.6683, f1_B=0.5019, f1_C=0.5417
+{'eval_loss': '0.9026', 'eval_balanced_accuracy': '0.8', 'eval_macro_f1': '0.7804', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.313', 'eval_steps_per_second': '0.583', 'epoch': '3'}
+{'loss': '1.066', 'grad_norm': '1.203', 'learning_rate': '0.000143', 'epoch': '3.031'}
+{'loss': '0.3465', 'grad_norm': '0.4327', 'learning_rate': '0.0001402', 'epoch': '3.107'}
+{'loss': '2.575', 'grad_norm': '43.84', 'learning_rate': '0.0001374', 'epoch': '3.183'}
+{'loss': '0.4814', 'grad_norm': '8.583', 'learning_rate': '0.0001346', 'epoch': '3.259'}
+{'loss': '0.4934', 'grad_norm': '115.1', 'learning_rate': '0.0001317', 'epoch': '3.336'}
+{'loss': '1.114', 'grad_norm': '2.927', 'learning_rate': '0.0001287', 'epoch': '3.412'}
+{'loss': '0.7736', 'grad_norm': '120.9', 'learning_rate': '0.0001258', 'epoch': '3.488'}
+{'loss': '0.1911', 'grad_norm': '0.2679', 'learning_rate': '0.0001228', 'epoch': '3.564'}
+{'loss': '1.748', 'grad_norm': '81.81', 'learning_rate': '0.0001198', 'epoch': '3.641'}
+{'loss': '0.367', 'grad_norm': '1.784', 'learning_rate': '0.0001168', 'epoch': '3.717'}
+{'loss': '0.2768', 'grad_norm': '30.62', 'learning_rate': '0.0001138', 'epoch': '3.793'}
+{'loss': '0.2722', 'grad_norm': '1.398', 'learning_rate': '0.0001107', 'epoch': '3.869'}
+{'loss': '0.4626', 'grad_norm': '0.005479', 'learning_rate': '0.0001077', 'epoch': '3.946'}
+[TestEval] E4.0: bal_acc=0.5052, macro_f1=0.4880, f1_A=0.7467, f1_B=0.5088, f1_C=0.4306
+{'eval_loss': '1.497', 'eval_balanced_accuracy': '0.8091', 'eval_macro_f1': '0.8041', 'eval_runtime': '101.3', 'eval_samples_per_second': '2.311', 'eval_steps_per_second': '0.583', 'epoch': '4'}
+{'loss': '0.2492', 'grad_norm': '75.36', 'learning_rate': '0.0001046', 'epoch': '4.015'}
+{'loss': '0.1625', 'grad_norm': '2.539', 'learning_rate': '0.0001015', 'epoch': '4.092'}
+{'loss': '0.6555', 'grad_norm': '2.125', 'learning_rate': '9.847e-05', 'epoch': '4.168'}
+{'loss': '0.1775', 'grad_norm': '17.6', 'learning_rate': '9.54e-05', 'epoch': '4.244'}
+{'loss': '0.4363', 'grad_norm': '0.005156', 'learning_rate': '9.234e-05', 'epoch': '4.32'}
+{'loss': '0.3311', 'grad_norm': '4.943', 'learning_rate': '8.928e-05', 'epoch': '4.397'}
+{'loss': '0.0499', 'grad_norm': '0.6671', 'learning_rate': '8.624e-05', 'epoch': '4.473'}
+{'loss': '0.3245', 'grad_norm': '0.03024', 'learning_rate': '8.321e-05', 'epoch': '4.549'}
+{'loss': '0.09595', 'grad_norm': '0.074', 'learning_rate': '8.019e-05', 'epoch': '4.625'}
+{'loss': '0.4741', 'grad_norm': '54.36', 'learning_rate': '7.719e-05', 'epoch': '4.702'}
+{'loss': '0.4398', 'grad_norm': '277.6', 'learning_rate': '7.422e-05', 'epoch': '4.778'}
+{'loss': '0.05706', 'grad_norm': '5.466', 'learning_rate': '7.127e-05', 'epoch': '4.854'}
+{'loss': '0.4622', 'grad_norm': '0.05137', 'learning_rate': '6.834e-05', 'epoch': '4.93'}
+{'loss': '0.7181', 'grad_norm': '0.0003198', 'learning_rate': '6.545e-05', 'epoch': '5'}
+[TestEval] E5.0: bal_acc=0.5121, macro_f1=0.4918, f1_A=0.7187, f1_B=0.5258, f1_C=0.5139
+{'eval_loss': '1.116', 'eval_balanced_accuracy': '0.8185', 'eval_macro_f1': '0.815', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.313', 'eval_steps_per_second': '0.583', 'epoch': '5'}
+{'loss': '0.02199', 'grad_norm': '0.0159', 'learning_rate': '6.258e-05', 'epoch': '5.076'}
+{'loss': '0.0004762', 'grad_norm': '0.002441', 'learning_rate': '5.976e-05', 'epoch': '5.153'}
+{'loss': '0.001711', 'grad_norm': '0.04121', 'learning_rate': '5.697e-05', 'epoch': '5.229'}
+{'loss': '0.001381', 'grad_norm': '0.02008', 'learning_rate': '5.422e-05', 'epoch': '5.305'}
+{'loss': '1.004', 'grad_norm': '0.003903', 'learning_rate': '5.151e-05', 'epoch': '5.381'}
+{'loss': '0.0004694', 'grad_norm': '0.06625', 'learning_rate': '4.885e-05', 'epoch': '5.458'}
+{'loss': '0.09977', 'grad_norm': '0.1658', 'learning_rate': '4.624e-05', 'epoch': '5.534'}
+{'loss': '0.002128', 'grad_norm': '0.002119', 'learning_rate': '4.368e-05', 'epoch': '5.61'}
+{'loss': '0.317', 'grad_norm': '0.002577', 'learning_rate': '4.117e-05', 'epoch': '5.686'}
+{'loss': '0.000126', 'grad_norm': '0.001124', 'learning_rate': '3.872e-05', 'epoch': '5.763'}
+{'loss': '0.008627', 'grad_norm': '0.05585', 'learning_rate': '3.632e-05', 'epoch': '5.839'}
+{'loss': '0.06859', 'grad_norm': '2.087', 'learning_rate': '3.399e-05', 'epoch': '5.915'}
+{'loss': '0.08941', 'grad_norm': '33.25', 'learning_rate': '3.172e-05', 'epoch': '5.991'}
+[TestEval] E6.0: bal_acc=0.5242, macro_f1=0.5049, f1_A=0.7484, f1_B=0.4550, f1_C=0.5972
+{'eval_loss': '1.098', 'eval_balanced_accuracy': '0.8427', 'eval_macro_f1': '0.8482', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.313', 'eval_steps_per_second': '0.583', 'epoch': '6'}
+{'loss': '0.153', 'grad_norm': '0.00634', 'learning_rate': '2.951e-05', 'epoch': '6.061'}
+{'loss': '3.037e-05', 'grad_norm': '2.428e-05', 'learning_rate': '2.736e-05', 'epoch': '6.137'}
+{'loss': '2.227e-05', 'grad_norm': '0.01035', 'learning_rate': '2.529e-05', 'epoch': '6.214'}
+{'loss': '0.1501', 'grad_norm': '0.004019', 'learning_rate': '2.329e-05', 'epoch': '6.29'}
+{'loss': '0.1877', 'grad_norm': '0.002574', 'learning_rate': '2.135e-05', 'epoch': '6.366'}
+{'loss': '0.002599', 'grad_norm': '0.004254', 'learning_rate': '1.95e-05', 'epoch': '6.442'}
+{'loss': '0.0004335', 'grad_norm': '0.01155', 'learning_rate': '1.772e-05', 'epoch': '6.519'}
+{'loss': '0.02556', 'grad_norm': '17.45', 'learning_rate': '1.601e-05', 'epoch': '6.595'}
+{'loss': '2.594e-05', 'grad_norm': '0.001265', 'learning_rate': '1.439e-05', 'epoch': '6.671'}
+{'loss': '0.0001766', 'grad_norm': '0.001742', 'learning_rate': '1.284e-05', 'epoch': '6.747'}
+{'loss': '2.248e-05', 'grad_norm': '0.01253', 'learning_rate': '1.138e-05', 'epoch': '6.824'}
+{'loss': '0.0001816', 'grad_norm': '0.0003306', 'learning_rate': '9.998e-06', 'epoch': '6.9'}
+{'loss': '2.196e-05', 'grad_norm': '0.02725', 'learning_rate': '8.704e-06', 'epoch': '6.976'}
+[TestEval] E7.0: bal_acc=0.5483, macro_f1=0.5257, f1_A=0.7505, f1_B=0.5207, f1_C=0.5972
+{'eval_loss': '1.082', 'eval_balanced_accuracy': '0.8414', 'eval_macro_f1': '0.8449', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.312', 'eval_steps_per_second': '0.583', 'epoch': '7'}
+{'loss': '7.793e-06', 'grad_norm': '0.001322', 'learning_rate': '7.495e-06', 'epoch': '7.046'}
+{'loss': '1.561e-05', 'grad_norm': '0.0008791', 'learning_rate': '6.373e-06', 'epoch': '7.122'}
+{'loss': '9.987e-05', 'grad_norm': '0.001636', 'learning_rate': '5.34e-06', 'epoch': '7.198'}
+{'loss': '2.847e-05', 'grad_norm': '0.002295', 'learning_rate': '4.395e-06', 'epoch': '7.275'}
+{'loss': '0.001067', 'grad_norm': '0.001569', 'learning_rate': '3.541e-06', 'epoch': '7.351'}
+{'loss': '0.0001665', 'grad_norm': '0.00941', 'learning_rate': '2.777e-06', 'epoch': '7.427'}
+{'loss': '0.03177', 'grad_norm': '0.0008942', 'learning_rate': '2.105e-06', 'epoch': '7.503'}
+{'loss': '0.000162', 'grad_norm': '0.001298', 'learning_rate': '1.525e-06', 'epoch': '7.58'}
+{'loss': '0.001794', 'grad_norm': '0.02552', 'learning_rate': '1.038e-06', 'epoch': '7.656'}
+{'loss': '1.868e-05', 'grad_norm': '0.002274', 'learning_rate': '6.436e-07', 'epoch': '7.732'}
+{'loss': '0.0001977', 'grad_norm': '0.0001588', 'learning_rate': '3.429e-07', 'epoch': '7.808'}
+{'loss': '0.0001962', 'grad_norm': '0.002111', 'learning_rate': '1.36e-07', 'epoch': '7.885'}
+{'loss': '1.089e-05', 'grad_norm': '0.001311', 'learning_rate': '2.306e-08', 'epoch': '7.961'}
+[TestEval] E8.0: bal_acc=0.5489, macro_f1=0.5262, f1_A=0.7526, f1_B=0.5207, f1_C=0.5972
+{'eval_loss': '1.083', 'eval_balanced_accuracy': '0.8469', 'eval_macro_f1': '0.8492', 'eval_runtime': '101.3', 'eval_samples_per_second': '2.311', 'eval_steps_per_second': '0.583', 'epoch': '8'}
+{'train_runtime': '2.547e+04', 'train_samples_per_second': '0.659', 'train_steps_per_second': '0.041', 'train_loss': '4.532', 'epoch': '8'}
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+============================================================
+FINETUNE EVAL: reaug_qwen3_32b_qlora_cw
+============================================================
+  Balanced Accuracy: 0.5489
+  Macro F1:          0.5262
+  F1 Group A:        0.7526
+  F1 Group B:        0.5207
+  F1 Group C:        0.5972
+
+                                                                              precision    recall  f1-score   support
+
+                                                       Блок бизнес-директора       0.25      1.00      0.40         1
+                                                      Блок деректора по газу       0.70      0.50      0.58        14
+                                          Блок директора по газовым проектам       0.57      0.67      0.62         6
+                                                 Блок директора по мощностям       0.85      0.94      0.89        48
+                                                 Блок директора по персоналу       1.00      0.67      0.80         3
+                                                  Блок директора по портфелю       0.00      0.00      0.00         4
+                                            Блок директора по проектированию       0.62      0.62      0.62         8
+                                             Блок директора по строительству       0.67      0.62      0.65        32
+                     Блок заместителя генерального директора по безопасности       0.69      0.83      0.75        24
+                         Блок заместителя генерального директора по закупкам       0.80      0.62      0.70        13
+                           Блок заместителя генерального директора по защите       0.80      0.80      0.80         5
+                        Блок заместителя генерального директора по имуществу       0.25      0.33      0.29         3
+         Блок заместителя генерального директора по организационным вопросам       1.00      0.82      0.90        11
+                    Блок заместителя генерального директора по строительству       0.00      0.00      0.00         1
+Блок исполнительного директора по реализации проекта "Большое месторождение"       0.00      0.00      0.00         1
+                                                Блок операционного директора       0.00      0.00      0.00         6
+                                                 Блок технического директора       0.68      0.84      0.75        49
+                                                  Блок финансового директора       0.75      0.75      0.75         4
+                                                        Генеральный директор       0.47      0.40      0.43        20
+                                                       Имущественные вопросы       1.00      1.00      1.00         1
+                                 Подразделение по информационным технологиям       1.00      1.00      1.00         1
+                                                          Проект "Восточный"       0.33      0.33      0.33         3
+                                                   Проект "Нефтяные краюшки"       0.59      0.67      0.62        15
+                                                        Проект "Новая нефть"       0.50      0.29      0.36         7
+                      Проект "Обустройство площадных объектов НГКМ Поменбше"       0.00      0.00      0.00         1
+                                                   Проект "Северная деревня"       0.60      0.43      0.50         7
+                             Проект "Трубопроводный транспорт Главного НГКМ"       0.00      0.00      0.00         4
+                                                              Проект "Южный"       0.50      0.50      0.50         2
+                     Проект «Обустройство Интересного лицензионного участка»       1.00      1.00      1.00         1
+                               Проект «Обустройство объектов Новейшей нейти»       0.00      0.00      0.00         1
+                                  Проект «Обустройство объектов Новой нефти»       0.50      0.33      0.40         3
+                           Проект «Трубопроводный транспорт Ещё одного НГКМ»       1.00      1.00      1.00         1
+                                                      Проект сервиса скважин       0.86      0.67      0.75         9
+                                         Управление землеустроительных работ       0.25      0.25      0.25         4
+                                                     Управление коммуникаций       0.25      1.00      0.40         1
+                                             Управление по проектным работам       0.89      0.89      0.89        27
+
+                                                                    accuracy                           0.68       341
+                                                                   macro avg       0.54      0.55      0.53       341
+                                                                weighted avg       0.67      0.68      0.67       341
+
+================================================================================
+FINETUNE DONE
+================================================================================
+{
+  "run_key": "reaug_qwen3_32b_qlora_cw",
+  "method": "qlora",
+  "model": "Qwen/Qwen3-32B",
+  "balanced_accuracy": 0.548915992517183,
+  "macro_f1": 0.5261565662495414,
+  "f1_group_A": 0.7526282275903879,
+  "f1_group_B": 0.5207070707070707,
+  "f1_group_C": 0.5972222222222222,
+  "trainable_params": 134402048,
+  "train_time_sec": 25470.333926677704,
+  "timestamp": "2026-05-05T06:02:15"
+}
+
+
+
+=====++++++++++++++++++++++++ FT CW POST 28534 ++++++++++++++++++++++++=====
+
+
+
+=== post | reaug_qwen3_32b_qlora_cw | Tue May  5 06:02:18 AM MSK 2026 ===
+results:
+total 943K
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 06:02 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  5 06:02 ..
+-rw-r--r-- 1 kvturanosov users 1.4K May  4 22:46 config_used.json
+-rw-r--r-- 1 kvturanosov users  312 May  5 06:02 finetune_results.csv
+-rw-r--r-- 1 kvturanosov users 2.6K May  5 06:02 manifest.json
+-rw-r--r-- 1 kvturanosov users 930K May  5 06:02 preds_reaug_qwen3_32b_qlora_cw.csv
+adapter:
+total 524M
+drwxr-xr-x 4 kvturanosov users 4.0K May  5 05:59 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  5 06:02 ..
+-rw-r--r-- 1 kvturanosov users 1.2K May  5 05:59 adapter_config.json
+-rw-r--r-- 1 kvturanosov users 513M May  5 05:59 adapter_model.safetensors
+-rw-r--r-- 1 kvturanosov users 4.1K May  5 05:59 chat_template.jinja
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 05:59 checkpoint-1056
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 05:06 checkpoint-924
+-rw-r--r-- 1 kvturanosov users  460 May  5 05:59 class_groups.json
+-rw-r--r-- 1 kvturanosov users 2.9K May  5 05:59 id2label.json
+-rw-r--r-- 1 kvturanosov users  499 May  5 05:59 metadata.json
+-rw-r--r-- 1 kvturanosov users 5.1K May  5 05:59 README.md
+-rw-r--r-- 1 kvturanosov users  932 May  5 05:57 test_curve.csv
+-rw-r--r-- 1 kvturanosov users  665 May  5 05:59 tokenizer_config.json
+-rw-r--r-- 1 kvturanosov users  11M May  5 05:59 tokenizer.json
+
+
+
+=====++++++++++++++++++++++++ FT R32 RUN 28535 ++++++++++++++++++++++++=====
+
+
+
+=== run | reaug_qwen3_32b_qlora_cw_r32 | SLURM 28535 | host=t2n1 | Mon May  4 10:46:33 PM MSK 2026 ===
+Mon May  4 22:46:34 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:24:00.0 Off |                    0 |
+| N/A   23C    P0             34W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.13.5
+================================================================================
+FINETUNE EXPERIMENT
+================================================================================
+{
+  "run_name": "reaug_qwen3_32b_qlora_cw_r32",
+  "experiment": "cw_r32",
+  "description": "class weights, LoRA r=32 alpha=64",
+  "started_at": "2026-05-04T22:46:43",
+  "project_root": "/tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw_r32/code",
+  "gpu": "A100_40",
+  "commit": "3d64f1dff0735206c7d05cdadcfae7f03f30ab36",
+  "data_stats": {
+    "data_after_stage3.csv": {
+      "rows": 2331,
+      "labels": 36
+    },
+    "data_test.csv": {
+      "rows": 341,
+      "labels": 36
+    },
+    "train_after_eda.csv": {
+      "rows": 1409,
+      "labels": 36
+    }
+  },
+  "config_path": "/tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw_r32/code/Data/finetune_runtime_configs/reaug_qwen3_32b_qlora_cw_r32.json",
+  "config": {
+    "model_name": "Qwen/Qwen3-32B",
+    "method": "qlora",
+    "task_type": "SEQ_CLS",
+    "num_labels": 36,
+    "max_seq_length": 2048,
+    "peft_config": {
+      "r": 32,
+      "lora_alpha": 64,
+      "lora_dropout": 0.05,
+      "bias": "none",
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ],
+      "modules_to_save": [
+        "score"
+      ]
+    },
+    "quantization": {
+      "load_in_4bit": true,
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_compute_dtype": "bfloat16",
+      "bnb_4bit_use_double_quant": true
+    },
+    "training_params": {
+      "num_train_epochs": 8,
+      "per_device_train_batch_size": 2,
+      "per_device_eval_batch_size": 4,
+      "gradient_accumulation_steps": 8,
+      "learning_rate": 0.0002,
+      "lr_scheduler_type": "cosine",
+      "warmup_ratio": 0.03,
+      "weight_decay": 0.01,
+      "optim": "adamw_torch",
+      "gradient_checkpointing": true,
+      "max_grad_norm": 1.0,
+      "logging_steps": 10,
+      "save_strategy": "epoch",
+      "eval_strategy": "epoch",
+      "load_best_model_at_end": true,
+      "metric_for_best_model": "macro_f1",
+      "greater_is_better": true,
+      "save_total_limit": 2,
+      "bf16": true,
+      "seed": 42
+    },
+    "run_key": "reaug_qwen3_32b_qlora_cw_r32",
+    "use_class_weights": true,
+    "val_split": 0.1,
+    "eval_test_each_epoch": true,
+    "loss": "ce"
+  },
+  "slurm_job_id": "28535"
+}
+[Данные] Найден чекпоинт этапа 3: data_after_stage3.csv (2331 записей)
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+[Данные] Найден чекпоинт этапа 0: train_after_eda.csv (1409 записей)
+[ClassWeights] enabled. range=[0.329, 1.408], mean=1.156
+[Split] train=2097 | val=234 (val_split=0.1) | test=341 (held out)
+[ModelLoad] 4bit QLoRA: device_map=auto, max_memory={0: '36GiB'}, async_load=off
+trainable params: 268,619,776 || all params: 32,253,015,040 || trainable%: 0.8329
+[Loss] CrossEntropy
+[TestEval] enabled — добавляет ~2-3 мин на эпоху, пишет в Data/finetune_checkpoints/reaug_qwen3_32b_qlora_cw_r32/test_curve.csv
+{'loss': '66.71', 'grad_norm': '427.2', 'learning_rate': '5.625e-05', 'epoch': '0.07626'}
+{'loss': '41.16', 'grad_norm': '338.7', 'learning_rate': '0.0001187', 'epoch': '0.1525'}
+{'loss': '31.78', 'grad_norm': '259.3', 'learning_rate': '0.0001813', 'epoch': '0.2288'}
+{'loss': '30.34', 'grad_norm': '189', 'learning_rate': '0.0002', 'epoch': '0.3051'}
+{'loss': '26.65', 'grad_norm': '206.3', 'learning_rate': '0.0001999', 'epoch': '0.3813'}
+{'loss': '26.02', 'grad_norm': '151', 'learning_rate': '0.0001997', 'epoch': '0.4576'}
+{'loss': '25.03', 'grad_norm': '144.9', 'learning_rate': '0.0001994', 'epoch': '0.5338'}
+{'loss': '23.52', 'grad_norm': '174.2', 'learning_rate': '0.000199', 'epoch': '0.6101'}
+{'loss': '21.84', 'grad_norm': '156.4', 'learning_rate': '0.0001985', 'epoch': '0.6864'}
+{'loss': '19.72', 'grad_norm': '155.5', 'learning_rate': '0.0001979', 'epoch': '0.7626'}
+{'loss': '18.13', 'grad_norm': '92.58', 'learning_rate': '0.0001972', 'epoch': '0.8389'}
+{'loss': '15.36', 'grad_norm': '101.6', 'learning_rate': '0.0001965', 'epoch': '0.9152'}
+{'loss': '12.16', 'grad_norm': '133.5', 'learning_rate': '0.0001956', 'epoch': '0.9914'}
+[TestEval] E1.0: bal_acc=0.4009, macro_f1=0.3765, f1_A=0.5046, f1_B=0.4103, f1_C=0.3750
+{'eval_loss': '1.642', 'eval_balanced_accuracy': '0.5394', 'eval_macro_f1': '0.52', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.313', 'eval_steps_per_second': '0.583', 'epoch': '1'}
+{'loss': '7.424', 'grad_norm': '115', 'learning_rate': '0.0001947', 'epoch': '1.061'}
+{'loss': '7.928', 'grad_norm': '116.7', 'learning_rate': '0.0001936', 'epoch': '1.137'}
+{'loss': '7.193', 'grad_norm': '97.61', 'learning_rate': '0.0001925', 'epoch': '1.214'}
+{'loss': '6.681', 'grad_norm': '90.19', 'learning_rate': '0.0001913', 'epoch': '1.29'}
+{'loss': '4.794', 'grad_norm': '84.46', 'learning_rate': '0.00019', 'epoch': '1.366'}
+{'loss': '6.586', 'grad_norm': '120.5', 'learning_rate': '0.0001886', 'epoch': '1.442'}
+{'loss': '6.853', 'grad_norm': '61.71', 'learning_rate': '0.0001872', 'epoch': '1.519'}
+{'loss': '5.909', 'grad_norm': '95.45', 'learning_rate': '0.0001856', 'epoch': '1.595'}
+{'loss': '6.746', 'grad_norm': '31.8', 'learning_rate': '0.000184', 'epoch': '1.671'}
+{'loss': '5.929', 'grad_norm': '42.02', 'learning_rate': '0.0001823', 'epoch': '1.747'}
+{'loss': '8.575', 'grad_norm': '82.76', 'learning_rate': '0.0001805', 'epoch': '1.824'}
+{'loss': '6.898', 'grad_norm': '79.13', 'learning_rate': '0.0001786', 'epoch': '1.9'}
+{'loss': '6.367', 'grad_norm': '80.41', 'learning_rate': '0.0001767', 'epoch': '1.976'}
+[TestEval] E2.0: bal_acc=0.5397, macro_f1=0.4913, f1_A=0.6723, f1_B=0.5441, f1_C=0.5889
+{'eval_loss': '0.7165', 'eval_balanced_accuracy': '0.8031', 'eval_macro_f1': '0.7883', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.312', 'eval_steps_per_second': '0.583', 'epoch': '2'}
+{'loss': '3.013', 'grad_norm': '45.66', 'learning_rate': '0.0001747', 'epoch': '2.046'}
+{'loss': '1.015', 'grad_norm': '1.861', 'learning_rate': '0.0001726', 'epoch': '2.122'}
+{'loss': '1.541', 'grad_norm': '180.9', 'learning_rate': '0.0001705', 'epoch': '2.198'}
+{'loss': '1.952', 'grad_norm': '128.8', 'learning_rate': '0.0001683', 'epoch': '2.275'}
+{'loss': '1.585', 'grad_norm': '12.6', 'learning_rate': '0.000166', 'epoch': '2.351'}
+{'loss': '2.94', 'grad_norm': '89.31', 'learning_rate': '0.0001637', 'epoch': '2.427'}
+{'loss': '1.975', 'grad_norm': '63.35', 'learning_rate': '0.0001613', 'epoch': '2.503'}
+{'loss': '1.972', 'grad_norm': '60.86', 'learning_rate': '0.0001588', 'epoch': '2.58'}
+{'loss': '2.896', 'grad_norm': '103', 'learning_rate': '0.0001563', 'epoch': '2.656'}
+{'loss': '2.597', 'grad_norm': '74.25', 'learning_rate': '0.0001538', 'epoch': '2.732'}
+{'loss': '3.243', 'grad_norm': '49.05', 'learning_rate': '0.0001511', 'epoch': '2.808'}
+{'loss': '2.369', 'grad_norm': '38.62', 'learning_rate': '0.0001485', 'epoch': '2.885'}
+{'loss': '2.37', 'grad_norm': '64.65', 'learning_rate': '0.0001458', 'epoch': '2.961'}
+[TestEval] E3.0: bal_acc=0.4838, macro_f1=0.4576, f1_A=0.7167, f1_B=0.4990, f1_C=0.4500
+{'eval_loss': '0.9759', 'eval_balanced_accuracy': '0.7772', 'eval_macro_f1': '0.7591', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.313', 'eval_steps_per_second': '0.583', 'epoch': '3'}
+{'loss': '1.725', 'grad_norm': '35.5', 'learning_rate': '0.000143', 'epoch': '3.031'}
+{'loss': '0.3118', 'grad_norm': '104.3', 'learning_rate': '0.0001402', 'epoch': '3.107'}
+{'loss': '2.444', 'grad_norm': '219.4', 'learning_rate': '0.0001374', 'epoch': '3.183'}
+{'loss': '0.9652', 'grad_norm': '8.084', 'learning_rate': '0.0001346', 'epoch': '3.259'}
+{'loss': '0.9153', 'grad_norm': '140.6', 'learning_rate': '0.0001317', 'epoch': '3.336'}
+{'loss': '1.16', 'grad_norm': '30.87', 'learning_rate': '0.0001287', 'epoch': '3.412'}
+{'loss': '0.7551', 'grad_norm': '55.13', 'learning_rate': '0.0001258', 'epoch': '3.488'}
+{'loss': '0.7267', 'grad_norm': '9.532', 'learning_rate': '0.0001228', 'epoch': '3.564'}
+{'loss': '1.689', 'grad_norm': '16.44', 'learning_rate': '0.0001198', 'epoch': '3.641'}
+{'loss': '0.8661', 'grad_norm': '10.7', 'learning_rate': '0.0001168', 'epoch': '3.717'}
+{'loss': '1.578', 'grad_norm': '0.3731', 'learning_rate': '0.0001138', 'epoch': '3.793'}
+{'loss': '0.4135', 'grad_norm': '0.5923', 'learning_rate': '0.0001107', 'epoch': '3.869'}
+{'loss': '0.2826', 'grad_norm': '0.2889', 'learning_rate': '0.0001077', 'epoch': '3.946'}
+[TestEval] E4.0: bal_acc=0.4948, macro_f1=0.4579, f1_A=0.6452, f1_B=0.5506, f1_C=0.4306
+{'eval_loss': '1.601', 'eval_balanced_accuracy': '0.8107', 'eval_macro_f1': '0.8007', 'eval_runtime': '101.3', 'eval_samples_per_second': '2.311', 'eval_steps_per_second': '0.583', 'epoch': '4'}
+{'loss': '0.9858', 'grad_norm': '46.48', 'learning_rate': '0.0001046', 'epoch': '4.015'}
+{'loss': '0.4461', 'grad_norm': '29.04', 'learning_rate': '0.0001015', 'epoch': '4.092'}
+{'loss': '0.06174', 'grad_norm': '0.04847', 'learning_rate': '9.847e-05', 'epoch': '4.168'}
+{'loss': '0.8977', 'grad_norm': '180.3', 'learning_rate': '9.54e-05', 'epoch': '4.244'}
+{'loss': '0.2239', 'grad_norm': '0.048', 'learning_rate': '9.234e-05', 'epoch': '4.32'}
+{'loss': '1.297', 'grad_norm': '0.139', 'learning_rate': '8.928e-05', 'epoch': '4.397'}
+{'loss': '0.7508', 'grad_norm': '0.004116', 'learning_rate': '8.624e-05', 'epoch': '4.473'}
+{'loss': '0.5822', 'grad_norm': '0.02674', 'learning_rate': '8.321e-05', 'epoch': '4.549'}
+{'loss': '0.2689', 'grad_norm': '0.004273', 'learning_rate': '8.019e-05', 'epoch': '4.625'}
+{'loss': '0.88', 'grad_norm': '84.02', 'learning_rate': '7.719e-05', 'epoch': '4.702'}
+{'loss': '0.06088', 'grad_norm': '10.76', 'learning_rate': '7.422e-05', 'epoch': '4.778'}
+{'loss': '0.009472', 'grad_norm': '0.0006324', 'learning_rate': '7.127e-05', 'epoch': '4.854'}
+{'loss': '0.1817', 'grad_norm': '0.02842', 'learning_rate': '6.834e-05', 'epoch': '4.93'}
+{'loss': '0.9652', 'grad_norm': '0.0009836', 'learning_rate': '6.545e-05', 'epoch': '5'}
+[TestEval] E5.0: bal_acc=0.5479, macro_f1=0.5093, f1_A=0.6924, f1_B=0.6047, f1_C=0.5333
+{'eval_loss': '1.234', 'eval_balanced_accuracy': '0.8173', 'eval_macro_f1': '0.8024', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.311', 'eval_steps_per_second': '0.583', 'epoch': '5'}
+{'loss': '0.005939', 'grad_norm': '0.6584', 'learning_rate': '6.258e-05', 'epoch': '5.076'}
+{'loss': '0.01164', 'grad_norm': '1.386', 'learning_rate': '5.976e-05', 'epoch': '5.153'}
+{'loss': '0.002159', 'grad_norm': '0.03821', 'learning_rate': '5.697e-05', 'epoch': '5.229'}
+{'loss': '0.004596', 'grad_norm': '0.0133', 'learning_rate': '5.422e-05', 'epoch': '5.305'}
+{'loss': '1.227', 'grad_norm': '0.0448', 'learning_rate': '5.151e-05', 'epoch': '5.381'}
+{'loss': '8.062e-05', 'grad_norm': '0.02639', 'learning_rate': '4.885e-05', 'epoch': '5.458'}
+{'loss': '0.003293', 'grad_norm': '0.03201', 'learning_rate': '4.624e-05', 'epoch': '5.534'}
+{'loss': '0.5217', 'grad_norm': '0.01583', 'learning_rate': '4.368e-05', 'epoch': '5.61'}
+{'loss': '0.1822', 'grad_norm': '0.5304', 'learning_rate': '4.117e-05', 'epoch': '5.686'}
+{'loss': '0.002123', 'grad_norm': '0.007094', 'learning_rate': '3.872e-05', 'epoch': '5.763'}
+{'loss': '0.01309', 'grad_norm': '35.76', 'learning_rate': '3.632e-05', 'epoch': '5.839'}
+{'loss': '0.2426', 'grad_norm': '56.23', 'learning_rate': '3.399e-05', 'epoch': '5.915'}
+{'loss': '0.04597', 'grad_norm': '0.0006585', 'learning_rate': '3.172e-05', 'epoch': '5.991'}
+[TestEval] E6.0: bal_acc=0.5544, macro_f1=0.5283, f1_A=0.7501, f1_B=0.5421, f1_C=0.5889
+{'eval_loss': '1.227', 'eval_balanced_accuracy': '0.8461', 'eval_macro_f1': '0.8398', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.313', 'eval_steps_per_second': '0.583', 'epoch': '6'}
+{'loss': '0.01632', 'grad_norm': '0.001371', 'learning_rate': '2.951e-05', 'epoch': '6.061'}
+{'loss': '0.01173', 'grad_norm': '0.003224', 'learning_rate': '2.736e-05', 'epoch': '6.137'}
+{'loss': '5.612e-05', 'grad_norm': '0.0002953', 'learning_rate': '2.529e-05', 'epoch': '6.214'}
+{'loss': '0.001897', 'grad_norm': '0.0004139', 'learning_rate': '2.329e-05', 'epoch': '6.29'}
+{'loss': '0.2613', 'grad_norm': '0.001087', 'learning_rate': '2.135e-05', 'epoch': '6.366'}
+{'loss': '2.889e-05', 'grad_norm': '0.001536', 'learning_rate': '1.95e-05', 'epoch': '6.442'}
+{'loss': '0.004579', 'grad_norm': '0.00153', 'learning_rate': '1.772e-05', 'epoch': '6.519'}
+{'loss': '0.02434', 'grad_norm': '16.96', 'learning_rate': '1.601e-05', 'epoch': '6.595'}
+{'loss': '8.925e-06', 'grad_norm': '0.001547', 'learning_rate': '1.439e-05', 'epoch': '6.671'}
+{'loss': '5.998e-05', 'grad_norm': '0.00122', 'learning_rate': '1.284e-05', 'epoch': '6.747'}
+{'loss': '1.589e-05', 'grad_norm': '0.0002965', 'learning_rate': '1.138e-05', 'epoch': '6.824'}
+{'loss': '0.2224', 'grad_norm': '2.282e-05', 'learning_rate': '9.998e-06', 'epoch': '6.9'}
+{'loss': '3.317e-05', 'grad_norm': '0.0009842', 'learning_rate': '8.704e-06', 'epoch': '6.976'}
+[TestEval] E7.0: bal_acc=0.5467, macro_f1=0.5265, f1_A=0.7418, f1_B=0.5425, f1_C=0.5889
+{'eval_loss': '1.237', 'eval_balanced_accuracy': '0.8378', 'eval_macro_f1': '0.8321', 'eval_runtime': '101.3', 'eval_samples_per_second': '2.31', 'eval_steps_per_second': '0.583', 'epoch': '7'}
+{'loss': '1.355e-05', 'grad_norm': '0.0002887', 'learning_rate': '7.495e-06', 'epoch': '7.046'}
+{'loss': '8.02e-06', 'grad_norm': '0.005689', 'learning_rate': '6.373e-06', 'epoch': '7.122'}
+{'loss': '2.76e-05', 'grad_norm': '0.001174', 'learning_rate': '5.34e-06', 'epoch': '7.198'}
+{'loss': '1.326e-05', 'grad_norm': '0.0003844', 'learning_rate': '4.395e-06', 'epoch': '7.275'}
+{'loss': '0.003035', 'grad_norm': '0.0007327', 'learning_rate': '3.541e-06', 'epoch': '7.351'}
+{'loss': '0.0001234', 'grad_norm': '0.003515', 'learning_rate': '2.777e-06', 'epoch': '7.427'}
+{'loss': '0.06639', 'grad_norm': '0.006288', 'learning_rate': '2.105e-06', 'epoch': '7.503'}
+{'loss': '8.635e-06', 'grad_norm': '0.0007889', 'learning_rate': '1.525e-06', 'epoch': '7.58'}
+{'loss': '1.822e-05', 'grad_norm': '0.003139', 'learning_rate': '1.038e-06', 'epoch': '7.656'}
+{'loss': '1.643e-05', 'grad_norm': '0.004772', 'learning_rate': '6.436e-07', 'epoch': '7.732'}
+{'loss': '0.06913', 'grad_norm': '0.0003057', 'learning_rate': '3.429e-07', 'epoch': '7.808'}
+{'loss': '0.0001356', 'grad_norm': '0.0009335', 'learning_rate': '1.36e-07', 'epoch': '7.885'}
+{'loss': '1.381e-05', 'grad_norm': '0.0007182', 'learning_rate': '2.306e-08', 'epoch': '7.961'}
+[TestEval] E8.0: bal_acc=0.5513, macro_f1=0.5290, f1_A=0.7414, f1_B=0.5529, f1_C=0.5889
+{'eval_loss': '1.241', 'eval_balanced_accuracy': '0.8323', 'eval_macro_f1': '0.8272', 'eval_runtime': '101.2', 'eval_samples_per_second': '2.312', 'eval_steps_per_second': '0.583', 'epoch': '8'}
+{'train_runtime': '2.545e+04', 'train_samples_per_second': '0.659', 'train_steps_per_second': '0.042', 'train_loss': '4.736', 'epoch': '8'}
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+============================================================
+FINETUNE EVAL: reaug_qwen3_32b_qlora_cw_r32
+============================================================
+  Balanced Accuracy: 0.5544
+  Macro F1:          0.5283
+  F1 Group A:        0.7501
+  F1 Group B:        0.5421
+  F1 Group C:        0.5889
+
+                                                                              precision    recall  f1-score   support
+
+                                                       Блок бизнес-директора       0.50      1.00      0.67         1
+                                                      Блок деректора по газу       0.50      0.50      0.50        14
+                                          Блок директора по газовым проектам       0.43      0.50      0.46         6
+                                                 Блок директора по мощностям       0.86      0.92      0.89        48
+                                                 Блок директора по персоналу       1.00      0.67      0.80         3
+                                                  Блок директора по портфелю       0.00      0.00      0.00         4
+                                            Блок директора по проектированию       0.62      0.62      0.62         8
+                                             Блок директора по строительству       0.79      0.59      0.68        32
+                     Блок заместителя генерального директора по безопасности       0.75      0.88      0.81        24
+                         Блок заместителя генерального директора по закупкам       0.47      0.62      0.53        13
+                           Блок заместителя генерального директора по защите       0.67      0.80      0.73         5
+                        Блок заместителя генерального директора по имуществу       0.33      0.33      0.33         3
+         Блок заместителя генерального директора по организационным вопросам       1.00      0.82      0.90        11
+                    Блок заместителя генерального директора по строительству       0.00      0.00      0.00         1
+Блок исполнительного директора по реализации проекта "Большое месторождение"       0.00      0.00      0.00         1
+                                                Блок операционного директора       0.20      0.17      0.18         6
+                                                 Блок технического директора       0.70      0.78      0.74        49
+                                                  Блок финансового директора       0.75      0.75      0.75         4
+                                                        Генеральный директор       0.55      0.60      0.57        20
+                                                       Имущественные вопросы       1.00      1.00      1.00         1
+                                 Подразделение по информационным технологиям       1.00      1.00      1.00         1
+                                                          Проект "Восточный"       1.00      0.33      0.50         3
+                                                   Проект "Нефтяные краюшки"       0.62      0.67      0.65        15
+                                                        Проект "Новая нефть"       0.33      0.29      0.31         7
+                      Проект "Обустройство площадных объектов НГКМ Поменбше"       0.00      0.00      0.00         1
+                                                   Проект "Северная деревня"       0.40      0.29      0.33         7
+                             Проект "Трубопроводный транспорт Главного НГКМ"       0.25      0.25      0.25         4
+                                                              Проект "Южный"       0.50      0.50      0.50         2
+                     Проект «Обустройство Интересного лицензионного участка»       0.50      1.00      0.67         1
+                               Проект «Обустройство объектов Новейшей нейти»       0.00      0.00      0.00         1
+                                  Проект «Обустройство объектов Новой нефти»       0.50      0.33      0.40         3
+                           Проект «Трубопроводный транспорт Ещё одного НГКМ»       1.00      1.00      1.00         1
+                                                      Проект сервиса скважин       0.86      0.67      0.75         9
+                                         Управление землеустроительных работ       0.50      0.25      0.33         4
+                                                     Управление коммуникаций       0.20      1.00      0.33         1
+                                             Управление по проектным работам       0.82      0.85      0.84        27
+
+                                                                    accuracy                           0.68       341
+                                                                   macro avg       0.54      0.55      0.53       341
+                                                                weighted avg       0.68      0.68      0.67       341
+
+================================================================================
+FINETUNE DONE
+================================================================================
+{
+  "run_key": "reaug_qwen3_32b_qlora_cw_r32",
+  "method": "qlora",
+  "model": "Qwen/Qwen3-32B",
+  "balanced_accuracy": 0.5544288998406063,
+  "macro_f1": 0.5283136633127499,
+  "f1_group_A": 0.7501436301199893,
+  "f1_group_B": 0.5420779220779222,
+  "f1_group_C": 0.5888888888888889,
+  "trainable_params": 268619776,
+  "train_time_sec": 25447.270267009735,
+  "timestamp": "2026-05-05T06:01:57"
+}
+
+
+
+=====++++++++++++++++++++++++ FT R32 POST 28536 ++++++++++++++++++++++++=====
+
+
+
+=== post | reaug_qwen3_32b_qlora_cw_r32 | Tue May  5 06:02:01 AM MSK 2026 ===
+results:
+total 943K
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 06:01 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  5 06:02 ..
+-rw-r--r-- 1 kvturanosov users 1.4K May  4 22:46 config_used.json
+-rw-r--r-- 1 kvturanosov users  317 May  5 06:01 finetune_results.csv
+-rw-r--r-- 1 kvturanosov users 2.7K May  5 06:01 manifest.json
+-rw-r--r-- 1 kvturanosov users 930K May  5 06:01 preds_reaug_qwen3_32b_qlora_cw_r32.csv
+adapter:
+total 1.1G
+drwxr-xr-x 4 kvturanosov users 4.0K May  5 05:59 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  5 06:02 ..
+-rw-r--r-- 1 kvturanosov users 1.2K May  5 05:59 adapter_config.json
+-rw-r--r-- 1 kvturanosov users 1.1G May  5 05:59 adapter_model.safetensors
+-rw-r--r-- 1 kvturanosov users 4.1K May  5 05:59 chat_template.jinja
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 05:58 checkpoint-1056
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 04:12 checkpoint-792
+-rw-r--r-- 1 kvturanosov users  460 May  5 05:59 class_groups.json
+-rw-r--r-- 1 kvturanosov users 2.9K May  5 05:59 id2label.json
+-rw-r--r-- 1 kvturanosov users  503 May  5 05:59 metadata.json
+-rw-r--r-- 1 kvturanosov users 5.1K May  5 05:59 README.md
+-rw-r--r-- 1 kvturanosov users  905 May  5 05:57 test_curve.csv
+-rw-r--r-- 1 kvturanosov users  665 May  5 05:59 tokenizer_config.json
+-rw-r--r-- 1 kvturanosov users  11M May  5 05:59 tokenizer.json
+
+
+
+=====++++++++++++++++++++++++ FT FOCAL RUN 28537 ++++++++++++++++++++++++=====
+
+
+
+=== run | reaug_qwen3_32b_qlora_cw_focal_g2 | SLURM 28537 | host=t2n1 | Mon May  4 10:46:33 PM MSK 2026 ===
+Mon May  4 22:46:33 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:01:00.0 Off |                    0 |
+| N/A   22C    P0             32W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.13.5
+================================================================================
+FINETUNE EXPERIMENT
+================================================================================
+{
+  "run_name": "reaug_qwen3_32b_qlora_cw_focal_g2",
+  "experiment": "cw_focal_g2",
+  "description": "class weights, focal loss gamma=2.0",
+  "started_at": "2026-05-04T22:46:43",
+  "project_root": "/tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw_focal_g2/code",
+  "gpu": "A100_40",
+  "commit": "3d64f1dff0735206c7d05cdadcfae7f03f30ab36",
+  "data_stats": {
+    "data_after_stage3.csv": {
+      "rows": 2331,
+      "labels": 36
+    },
+    "data_test.csv": {
+      "rows": 341,
+      "labels": 36
+    },
+    "train_after_eda.csv": {
+      "rows": 1409,
+      "labels": 36
+    }
+  },
+  "config_path": "/tmp/kvt/finetune_reaug/reaug_qwen3_32b_qlora_cw_focal_g2/code/Data/finetune_runtime_configs/reaug_qwen3_32b_qlora_cw_focal_g2.json",
+  "config": {
+    "model_name": "Qwen/Qwen3-32B",
+    "method": "qlora",
+    "task_type": "SEQ_CLS",
+    "num_labels": 36,
+    "max_seq_length": 2048,
+    "peft_config": {
+      "r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05,
+      "bias": "none",
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ],
+      "modules_to_save": [
+        "score"
+      ]
+    },
+    "quantization": {
+      "load_in_4bit": true,
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_compute_dtype": "bfloat16",
+      "bnb_4bit_use_double_quant": true
+    },
+    "training_params": {
+      "num_train_epochs": 8,
+      "per_device_train_batch_size": 2,
+      "per_device_eval_batch_size": 4,
+      "gradient_accumulation_steps": 8,
+      "learning_rate": 0.0002,
+      "lr_scheduler_type": "cosine",
+      "warmup_ratio": 0.03,
+      "weight_decay": 0.01,
+      "optim": "adamw_torch",
+      "gradient_checkpointing": true,
+      "max_grad_norm": 1.0,
+      "logging_steps": 10,
+      "save_strategy": "epoch",
+      "eval_strategy": "epoch",
+      "load_best_model_at_end": true,
+      "metric_for_best_model": "macro_f1",
+      "greater_is_better": true,
+      "save_total_limit": 2,
+      "bf16": true,
+      "seed": 42
+    },
+    "run_key": "reaug_qwen3_32b_qlora_cw_focal_g2",
+    "use_class_weights": true,
+    "val_split": 0.1,
+    "eval_test_each_epoch": true,
+    "loss": "focal",
+    "focal_gamma": 2.0
+  },
+  "slurm_job_id": "28537"
+}
+[Данные] Найден чекпоинт этапа 3: data_after_stage3.csv (2331 записей)
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+[Данные] Найден чекпоинт этапа 0: train_after_eda.csv (1409 записей)
+[ClassWeights] enabled. range=[0.329, 1.408], mean=1.156
+[Split] train=2097 | val=234 (val_split=0.1) | test=341 (held out)
+[ModelLoad] 4bit QLoRA: device_map=auto, max_memory={0: '36GiB'}, async_load=off
+trainable params: 134,402,048 || all params: 32,118,797,312 || trainable%: 0.4185
+[Loss] Focal (gamma=2.0)
+[TestEval] enabled — добавляет ~2-3 мин на эпоху, пишет в Data/finetune_checkpoints/reaug_qwen3_32b_qlora_cw_focal_g2/test_curve.csv
+{'loss': '61.5', 'grad_norm': '424.3', 'learning_rate': '5.625e-05', 'epoch': '0.07626'}
+{'loss': '39.37', 'grad_norm': '354.6', 'learning_rate': '0.0001187', 'epoch': '0.1525'}
+{'loss': '32.41', 'grad_norm': '286.9', 'learning_rate': '0.0001813', 'epoch': '0.2288'}
+{'loss': '30.23', 'grad_norm': '257.3', 'learning_rate': '0.0002', 'epoch': '0.3051'}
+{'loss': '26.29', 'grad_norm': '230.4', 'learning_rate': '0.0001999', 'epoch': '0.3813'}
+{'loss': '24.46', 'grad_norm': '156.6', 'learning_rate': '0.0001997', 'epoch': '0.4576'}
+{'loss': '22.34', 'grad_norm': '160', 'learning_rate': '0.0001994', 'epoch': '0.5338'}
+{'loss': '21.34', 'grad_norm': '181.6', 'learning_rate': '0.000199', 'epoch': '0.6101'}
+{'loss': '19.7', 'grad_norm': '169.9', 'learning_rate': '0.0001985', 'epoch': '0.6864'}
+{'loss': '18.64', 'grad_norm': '142.4', 'learning_rate': '0.0001979', 'epoch': '0.7626'}
+{'loss': '16.29', 'grad_norm': '135.4', 'learning_rate': '0.0001972', 'epoch': '0.8389'}
+{'loss': '12.74', 'grad_norm': '208.7', 'learning_rate': '0.0001965', 'epoch': '0.9152'}
+{'loss': '9.98', 'grad_norm': '141.2', 'learning_rate': '0.0001956', 'epoch': '0.9914'}
+[TestEval] E1.0: bal_acc=0.3741, macro_f1=0.3162, f1_A=0.4637, f1_B=0.4062, f1_C=0.3889
+{'eval_loss': '1.227', 'eval_balanced_accuracy': '0.5839', 'eval_macro_f1': '0.5737', 'eval_runtime': '100.3', 'eval_samples_per_second': '2.333', 'eval_steps_per_second': '0.588', 'epoch': '1'}
+{'loss': '4.815', 'grad_norm': '117.4', 'learning_rate': '0.0001947', 'epoch': '1.061'}
+{'loss': '6.732', 'grad_norm': '87.66', 'learning_rate': '0.0001936', 'epoch': '1.137'}
+{'loss': '4.912', 'grad_norm': '79.31', 'learning_rate': '0.0001925', 'epoch': '1.214'}
+{'loss': '5.293', 'grad_norm': '84.11', 'learning_rate': '0.0001913', 'epoch': '1.29'}
+{'loss': '4.789', 'grad_norm': '203.7', 'learning_rate': '0.00019', 'epoch': '1.366'}
+{'loss': '4.727', 'grad_norm': '107.7', 'learning_rate': '0.0001886', 'epoch': '1.442'}
+{'loss': '5.037', 'grad_norm': '23.61', 'learning_rate': '0.0001872', 'epoch': '1.519'}
+{'loss': '3.877', 'grad_norm': '105', 'learning_rate': '0.0001856', 'epoch': '1.595'}
+{'loss': '4.417', 'grad_norm': '85.74', 'learning_rate': '0.000184', 'epoch': '1.671'}
+{'loss': '3.673', 'grad_norm': '101', 'learning_rate': '0.0001823', 'epoch': '1.747'}
+{'loss': '5.68', 'grad_norm': '84.18', 'learning_rate': '0.0001805', 'epoch': '1.824'}
+{'loss': '4.855', 'grad_norm': '133.4', 'learning_rate': '0.0001786', 'epoch': '1.9'}
+{'loss': '4.041', 'grad_norm': '93.79', 'learning_rate': '0.0001767', 'epoch': '1.976'}
+[TestEval] E2.0: bal_acc=0.5030, macro_f1=0.4665, f1_A=0.6528, f1_B=0.5147, f1_C=0.5056
+{'eval_loss': '0.6749', 'eval_balanced_accuracy': '0.7256', 'eval_macro_f1': '0.7117', 'eval_runtime': '100.3', 'eval_samples_per_second': '2.332', 'eval_steps_per_second': '0.588', 'epoch': '2'}
+{'loss': '2.443', 'grad_norm': '81.86', 'learning_rate': '0.0001747', 'epoch': '2.046'}
+{'loss': '0.6153', 'grad_norm': '6.048', 'learning_rate': '0.0001726', 'epoch': '2.122'}
+{'loss': '0.4394', 'grad_norm': '19.21', 'learning_rate': '0.0001705', 'epoch': '2.198'}
+{'loss': '0.7453', 'grad_norm': '39.85', 'learning_rate': '0.0001683', 'epoch': '2.275'}
+{'loss': '1.286', 'grad_norm': '42.69', 'learning_rate': '0.000166', 'epoch': '2.351'}
+{'loss': '1.681', 'grad_norm': '23.04', 'learning_rate': '0.0001637', 'epoch': '2.427'}
+{'loss': '1.455', 'grad_norm': '27.47', 'learning_rate': '0.0001613', 'epoch': '2.503'}
+{'loss': '1.266', 'grad_norm': '65.53', 'learning_rate': '0.0001588', 'epoch': '2.58'}
+{'loss': '1.369', 'grad_norm': '25.48', 'learning_rate': '0.0001563', 'epoch': '2.656'}
+{'loss': '1.241', 'grad_norm': '70.01', 'learning_rate': '0.0001538', 'epoch': '2.732'}
+{'loss': '1.095', 'grad_norm': '38.68', 'learning_rate': '0.0001511', 'epoch': '2.808'}
+{'loss': '1.355', 'grad_norm': '25.3', 'learning_rate': '0.0001485', 'epoch': '2.885'}
+{'loss': '1.857', 'grad_norm': '7.341', 'learning_rate': '0.0001458', 'epoch': '2.961'}
+[TestEval] E3.0: bal_acc=0.5280, macro_f1=0.4836, f1_A=0.5943, f1_B=0.4667, f1_C=0.7000
+{'eval_loss': '0.5394', 'eval_balanced_accuracy': '0.7938', 'eval_macro_f1': '0.7758', 'eval_runtime': '100.3', 'eval_samples_per_second': '2.333', 'eval_steps_per_second': '0.588', 'epoch': '3'}
+{'loss': '0.6825', 'grad_norm': '0.0111', 'learning_rate': '0.000143', 'epoch': '3.031'}
+{'loss': '0.3547', 'grad_norm': '8.482', 'learning_rate': '0.0001402', 'epoch': '3.107'}
+{'loss': '1.461', 'grad_norm': '27.32', 'learning_rate': '0.0001374', 'epoch': '3.183'}
+{'loss': '0.2647', 'grad_norm': '6.971', 'learning_rate': '0.0001346', 'epoch': '3.259'}
+{'loss': '0.4349', 'grad_norm': '0.6375', 'learning_rate': '0.0001317', 'epoch': '3.336'}
+{'loss': '0.7952', 'grad_norm': '60.68', 'learning_rate': '0.0001287', 'epoch': '3.412'}
+{'loss': '0.2396', 'grad_norm': '25.68', 'learning_rate': '0.0001258', 'epoch': '3.488'}
+{'loss': '0.9044', 'grad_norm': '33.75', 'learning_rate': '0.0001228', 'epoch': '3.564'}
+{'loss': '1.775', 'grad_norm': '69.34', 'learning_rate': '0.0001198', 'epoch': '3.641'}
+{'loss': '0.845', 'grad_norm': '111.6', 'learning_rate': '0.0001168', 'epoch': '3.717'}
+{'loss': '0.2572', 'grad_norm': '9.289', 'learning_rate': '0.0001138', 'epoch': '3.793'}
+{'loss': '0.04218', 'grad_norm': '0.1239', 'learning_rate': '0.0001107', 'epoch': '3.869'}
+{'loss': '0.579', 'grad_norm': '30.63', 'learning_rate': '0.0001077', 'epoch': '3.946'}
+[TestEval] E4.0: bal_acc=0.5082, macro_f1=0.4873, f1_A=0.6700, f1_B=0.5330, f1_C=0.5139
+{'eval_loss': '0.5759', 'eval_balanced_accuracy': '0.8564', 'eval_macro_f1': '0.8434', 'eval_runtime': '100.3', 'eval_samples_per_second': '2.332', 'eval_steps_per_second': '0.588', 'epoch': '4'}
+{'loss': '0.8756', 'grad_norm': '26.64', 'learning_rate': '0.0001046', 'epoch': '4.015'}
+{'loss': '0.5789', 'grad_norm': '7.581', 'learning_rate': '0.0001015', 'epoch': '4.092'}
+{'loss': '0.01218', 'grad_norm': '0.1374', 'learning_rate': '9.847e-05', 'epoch': '4.168'}
+{'loss': '0.2589', 'grad_norm': '96.48', 'learning_rate': '9.54e-05', 'epoch': '4.244'}
+{'loss': '0.0007541', 'grad_norm': '0.002254', 'learning_rate': '9.234e-05', 'epoch': '4.32'}
+{'loss': '0.06289', 'grad_norm': '1.217', 'learning_rate': '8.928e-05', 'epoch': '4.397'}
+{'loss': '0.04733', 'grad_norm': '0.0001825', 'learning_rate': '8.624e-05', 'epoch': '4.473'}
+{'loss': '0.006666', 'grad_norm': '6.828e-06', 'learning_rate': '8.321e-05', 'epoch': '4.549'}
+{'loss': '0.06031', 'grad_norm': '14.25', 'learning_rate': '8.019e-05', 'epoch': '4.625'}
+{'loss': '0.2819', 'grad_norm': '20.01', 'learning_rate': '7.719e-05', 'epoch': '4.702'}
+{'loss': '0.1989', 'grad_norm': '6.324', 'learning_rate': '7.422e-05', 'epoch': '4.778'}
+{'loss': '0.05418', 'grad_norm': '0.0004845', 'learning_rate': '7.127e-05', 'epoch': '4.854'}
+{'loss': '0.5977', 'grad_norm': '2.133', 'learning_rate': '6.834e-05', 'epoch': '4.93'}
+{'loss': '0.1057', 'grad_norm': '8.524e-08', 'learning_rate': '6.545e-05', 'epoch': '5'}
+[TestEval] E5.0: bal_acc=0.4967, macro_f1=0.4699, f1_A=0.7154, f1_B=0.4381, f1_C=0.5333
+{'eval_loss': '0.7134', 'eval_balanced_accuracy': '0.7992', 'eval_macro_f1': '0.793', 'eval_runtime': '100.3', 'eval_samples_per_second': '2.332', 'eval_steps_per_second': '0.588', 'epoch': '5'}
+{'loss': '0.0002492', 'grad_norm': '0.004791', 'learning_rate': '6.258e-05', 'epoch': '5.076'}
+{'loss': '0.003697', 'grad_norm': '0.0003563', 'learning_rate': '5.976e-05', 'epoch': '5.153'}
+{'loss': '0.02488', 'grad_norm': '21.45', 'learning_rate': '5.697e-05', 'epoch': '5.229'}
+{'loss': '0.06396', 'grad_norm': '0.001037', 'learning_rate': '5.422e-05', 'epoch': '5.305'}
+{'loss': '0.2178', 'grad_norm': '0.0003786', 'learning_rate': '5.151e-05', 'epoch': '5.381'}
+{'loss': '0.03012', 'grad_norm': '27.31', 'learning_rate': '4.885e-05', 'epoch': '5.458'}
+{'loss': '5.752e-05', 'grad_norm': '1.898e-06', 'learning_rate': '4.624e-05', 'epoch': '5.534'}
+{'loss': '0.07552', 'grad_norm': '4.929e-08', 'learning_rate': '4.368e-05', 'epoch': '5.61'}
+{'loss': '0.2902', 'grad_norm': '0.0003911', 'learning_rate': '4.117e-05', 'epoch': '5.686'}
+{'loss': '1.476e-05', 'grad_norm': '7.781e-06', 'learning_rate': '3.872e-05', 'epoch': '5.763'}
+{'loss': '0.009181', 'grad_norm': '0.3982', 'learning_rate': '3.632e-05', 'epoch': '5.839'}
+{'loss': '0.05707', 'grad_norm': '0.006192', 'learning_rate': '3.399e-05', 'epoch': '5.915'}
+{'loss': '0.001405', 'grad_norm': '0.02125', 'learning_rate': '3.172e-05', 'epoch': '5.991'}
+[TestEval] E6.0: bal_acc=0.5436, macro_f1=0.5184, f1_A=0.7103, f1_B=0.5089, f1_C=0.6167
+{'eval_loss': '0.7051', 'eval_balanced_accuracy': '0.8322', 'eval_macro_f1': '0.8245', 'eval_runtime': '100.3', 'eval_samples_per_second': '2.332', 'eval_steps_per_second': '0.588', 'epoch': '6'}
+{'train_runtime': '1.894e+04', 'train_samples_per_second': '0.886', 'train_steps_per_second': '0.056', 'train_loss': '5.398', 'epoch': '6'}
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+============================================================
+FINETUNE EVAL: reaug_qwen3_32b_qlora_cw_focal_g2
+============================================================
+  Balanced Accuracy: 0.5082
+  Macro F1:          0.4873
+  F1 Group A:        0.6700
+  F1 Group B:        0.5330
+  F1 Group C:        0.5139
+
+                                                                              precision    recall  f1-score   support
+
+                                                       Блок бизнес-директора       0.25      1.00      0.40         1
+                                                      Блок деректора по газу       0.64      0.64      0.64        14
+                                          Блок директора по газовым проектам       1.00      0.33      0.50         6
+                                                 Блок директора по мощностям       0.88      0.73      0.80        48
+                                                 Блок директора по персоналу       1.00      0.33      0.50         3
+                                                  Блок директора по портфелю       0.00      0.00      0.00         4
+                                            Блок директора по проектированию       0.71      0.62      0.67         8
+                                             Блок директора по строительству       0.82      0.44      0.57        32
+                     Блок заместителя генерального директора по безопасности       0.53      0.83      0.65        24
+                         Блок заместителя генерального директора по закупкам       0.42      0.38      0.40        13
+                           Блок заместителя генерального директора по защите       0.75      0.60      0.67         5
+                        Блок заместителя генерального директора по имуществу       0.50      0.33      0.40         3
+         Блок заместителя генерального директора по организационным вопросам       0.64      0.82      0.72        11
+                    Блок заместителя генерального директора по строительству       0.00      0.00      0.00         1
+Блок исполнительного директора по реализации проекта "Большое месторождение"       0.00      0.00      0.00         1
+                                                Блок операционного директора       0.11      0.17      0.13         6
+                                                 Блок технического директора       0.67      0.67      0.67        49
+                                                  Блок финансового директора       1.00      1.00      1.00         4
+                                                        Генеральный директор       0.57      0.60      0.59        20
+                                                       Имущественные вопросы       1.00      1.00      1.00         1
+                                 Подразделение по информационным технологиям       1.00      1.00      1.00         1
+                                                          Проект "Восточный"       1.00      0.33      0.50         3
+                                                   Проект "Нефтяные краюшки"       0.37      0.67      0.48        15
+                                                        Проект "Новая нефть"       0.50      0.43      0.46         7
+                      Проект "Обустройство площадных объектов НГКМ Поменбше"       0.00      0.00      0.00         1
+                                                   Проект "Северная деревня"       0.60      0.43      0.50         7
+                             Проект "Трубопроводный транспорт Главного НГКМ"       0.20      0.25      0.22         4
+                                                              Проект "Южный"       0.33      0.50      0.40         2
+                     Проект «Обустройство Интересного лицензионного участка»       1.00      1.00      1.00         1
+                               Проект «Обустройство объектов Новейшей нейти»       0.00      0.00      0.00         1
+                                  Проект «Обустройство объектов Новой нефти»       0.25      0.33      0.29         3
+                           Проект «Трубопроводный транспорт Ещё одного НГКМ»       0.00      0.00      0.00         1
+                                                      Проект сервиса скважин       0.47      0.78      0.58         9
+                                         Управление землеустроительных работ       0.33      0.25      0.29         4
+                                                     Управление коммуникаций       0.50      1.00      0.67         1
+                                             Управление по проектным работам       0.92      0.81      0.86        27
+
+                                                                    accuracy                           0.61       341
+                                                                   macro avg       0.53      0.51      0.49       341
+                                                                weighted avg       0.66      0.61      0.61       341
+
+================================================================================
+FINETUNE DONE
+================================================================================
+{
+  "run_key": "reaug_qwen3_32b_qlora_cw_focal_g2",
+  "method": "qlora",
+  "model": "Qwen/Qwen3-32B",
+  "balanced_accuracy": 0.5081627550873582,
+  "macro_f1": 0.48734800798783595,
+  "f1_group_A": 0.6700218285825859,
+  "f1_group_B": 0.5330086580086579,
+  "f1_group_C": 0.5138888888888888,
+  "trainable_params": 134402048,
+  "train_time_sec": 18945.04685974121,
+  "timestamp": "2026-05-05T04:13:28"
+}
+
+
+
+=====++++++++++++++++++++++++ FT FOCAL POST 28538 ++++++++++++++++++++++++=====
+
+
+
+=== post | reaug_qwen3_32b_qlora_cw_focal_g2 | Tue May  5 04:13:46 AM MSK 2026 ===
+results:
+total 944K
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 04:13 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  5 04:13 ..
+-rw-r--r-- 1 kvturanosov users 1.4K May  4 22:46 config_used.json
+-rw-r--r-- 1 kvturanosov users  322 May  5 04:13 finetune_results.csv
+-rw-r--r-- 1 kvturanosov users 2.7K May  5 04:13 manifest.json
+-rw-r--r-- 1 kvturanosov users 931K May  5 04:13 preds_reaug_qwen3_32b_qlora_cw_focal_g2.csv
+adapter:
+total 524M
+drwxr-xr-x 4 kvturanosov users 4.0K May  5 04:10 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  5 04:13 ..
+-rw-r--r-- 1 kvturanosov users 1.2K May  5 04:10 adapter_config.json
+-rw-r--r-- 1 kvturanosov users 513M May  5 04:10 adapter_model.safetensors
+-rw-r--r-- 1 kvturanosov users 4.1K May  5 04:10 chat_template.jinja
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 02:25 checkpoint-528
+drwxr-xr-x 2 kvturanosov users 4.0K May  5 04:10 checkpoint-792
+-rw-r--r-- 1 kvturanosov users  460 May  5 04:10 class_groups.json
+-rw-r--r-- 1 kvturanosov users 2.9K May  5 04:10 id2label.json
+-rw-r--r-- 1 kvturanosov users  509 May  5 04:10 metadata.json
+-rw-r--r-- 1 kvturanosov users 5.1K May  5 04:10 README.md
+-rw-r--r-- 1 kvturanosov users  725 May  5 04:08 test_curve.csv
+-rw-r--r-- 1 kvturanosov users  665 May  5 04:10 tokenizer_config.json
+-rw-r--r-- 1 kvturanosov users  11M May  5 04:10 tokenizer.json
+
+
