@@ -85,6 +85,8 @@
       "max_retries": 20,
       "oversample_factor": 1,
       "min_judge_score": 2.5,
+      "use_judge": false,
+      "pivot_rounds": 3,
       "originals_only_sources": true,
       "validation_min_text_length": 250,
       "validation_min_length_ratio": 0.7,
