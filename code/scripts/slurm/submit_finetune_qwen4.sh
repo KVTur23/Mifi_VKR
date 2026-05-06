@@ -4,7 +4,15 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 CODE_DIR=$(pwd)
-BRANCH_KEY=${BRANCH_KEY:-$(basename "$(dirname "$CODE_DIR")")}
+if [ -z "${BRANCH_KEY:-}" ]; then
+    PARENT=$(basename "$(dirname "$CODE_DIR")")
+    GRANDPARENT=$(basename "$(dirname "$(dirname "$CODE_DIR")")")
+    case "$PARENT" in
+        test_last|test_sev) BRANCH_KEY=$PARENT ;;
+        code) BRANCH_KEY=$GRANDPARENT ;;
+        *) BRANCH_KEY=$PARENT ;;
+    esac
+fi
 BASE_RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs
 GPU_PROFILE=${GPU_PROFILE:-A100_40}
 

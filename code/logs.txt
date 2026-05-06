@@ -1,0 +1,180 @@
+
+
+
+=====++++++++++++++++++++++++ SEV NO_CW RUN 28640 ++++++++++++++++++++++++=====
+
+
+
+=== run | test_sev_qwen3_32b_qlora_no_cw | no_cw | SLURM 28640 | host=t2n1 | Wed May  6 09:40:42 PM MSK 2026 ===
+Wed May  6 21:40:42 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:61:00.0 Off |                    0 |
+| N/A   20C    P0             33W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.13.5
+
+
+
+=====++++++++++++++++++++++++ SEV NO_CW POST 28641 ++++++++++++++++++++++++=====
+
+
+
+=== post | test_sev_qwen3_32b_qlora_no_cw | Wed May  6 09:41:15 PM MSK 2026 ===
+results:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:40 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
+adapter:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:41 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
+
+
+
+=====++++++++++++++++++++++++ SEV CW_V10 RUN 28642 ++++++++++++++++++++++++=====
+
+
+
+=== run | test_sev_qwen3_32b_qlora_cw_v10 | cw_v10 | SLURM 28642 | host=t2n1 | Wed May  6 09:40:41 PM MSK 2026 ===
+Wed May  6 21:40:41 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:41:00.0 Off |                    0 |
+| N/A   21C    P0             33W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.13.5
+
+
+
+=====++++++++++++++++++++++++ SEV CW_V10 POST 28643 ++++++++++++++++++++++++=====
+
+
+
+=== post | test_sev_qwen3_32b_qlora_cw_v10 | Wed May  6 09:41:16 PM MSK 2026 ===
+results:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:40 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
+adapter:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:41 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
+
+
+
+=====++++++++++++++++++++++++ SEV NO_CW_R32 RUN 28644 ++++++++++++++++++++++++=====
+
+
+
+=== run | test_sev_qwen3_32b_qlora_no_cw_r32 | no_cw_r32 | SLURM 28644 | host=t2n1 | Wed May  6 09:40:42 PM MSK 2026 ===
+Wed May  6 21:40:42 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:24:00.0 Off |                    0 |
+| N/A   22C    P0             34W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.13.5
+
+
+
+=====++++++++++++++++++++++++ SEV NO_CW_R32 POST 28645 ++++++++++++++++++++++++=====
+
+
+
+=== post | test_sev_qwen3_32b_qlora_no_cw_r32 | Wed May  6 09:41:16 PM MSK 2026 ===
+results:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:40 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
+adapter:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:41 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
+
+
+
+=====++++++++++++++++++++++++ SEV CW_V10_R32 RUN 28646 ++++++++++++++++++++++++=====
+
+
+
+=== run | test_sev_qwen3_32b_qlora_cw_v10_r32 | cw_v10_r32 | SLURM 28646 | host=t2n1 | Wed May  6 09:40:41 PM MSK 2026 ===
+Wed May  6 21:40:41 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:01:00.0 Off |                    0 |
+| N/A   21C    P0             31W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.13.5
+
+
+
+=====++++++++++++++++++++++++ SEV CW_V10_R32 POST 28647 ++++++++++++++++++++++++=====
+
+
+
+=== post | test_sev_qwen3_32b_qlora_cw_v10_r32 | Wed May  6 09:41:16 PM MSK 2026 ===
+results:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:40 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
+adapter:
+total 8.0K
+drwxr-xr-x 2 kvturanosov users 4.0K May  6 21:41 .
+drwxr-xr-x 6 kvturanosov users 4.0K May  6 21:41 ..
