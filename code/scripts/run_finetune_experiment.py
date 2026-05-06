@@ -32,6 +32,19 @@ RUNTIME_CONFIG_DIR = PROJECT_ROOT / "Data" / "finetune_runtime_configs"
 
 
 EXPERIMENTS = {
+    "no_cw": {
+        "description": "no class weights, base LoRA rank",
+        "overrides": {
+            "use_class_weights": False,
+        },
+    },
+    "cw_v10": {
+        "description": "class weights, val_split=0.10, base LoRA rank",
+        "overrides": {
+            "use_class_weights": True,
+            "val_split": 0.10,
+        },
+    },
     "cw": {
         "description": "class weights, base LoRA rank",
         "overrides": {},
@@ -56,6 +69,17 @@ EXPERIMENTS = {
         "description": "no class weights, LoRA r=32 alpha=64",
         "overrides": {
             "use_class_weights": False,
+            "peft_config": {
+                "r": 32,
+                "lora_alpha": 64,
+            },
+        },
+    },
+    "cw_v10_r32": {
+        "description": "class weights, val_split=0.10, LoRA r=32 alpha=64",
+        "overrides": {
+            "use_class_weights": True,
+            "val_split": 0.10,
             "peft_config": {
                 "r": 32,
                 "lora_alpha": 64,
