@@ -6,7 +6,6 @@ cd /mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation/code
 mkdir -p /mnt/pool/6/kvturanosov/VKR/finetune_runs/reaug_ruadapt_qwen3_32b_pre/logs
 mkdir -p /mnt/pool/6/kvturanosov/VKR/finetune_runs/reaug_ruadapt_qwen3_32b_qlora_cw/logs
 mkdir -p /mnt/pool/6/kvturanosov/VKR/finetune_runs/reaug_ruadapt_qwen3_32b_qlora_cw_r32/logs
-mkdir -p /mnt/pool/6/kvturanosov/VKR/finetune_runs/reaug_ruadapt_qwen3_32b_qlora_cw_focal_g2/logs
 
 SBATCH_ARGS=${SBATCH_ARGS:-}
 
@@ -22,10 +21,5 @@ R32_RUN=$(sbatch --parsable $SBATCH_ARGS --dependency=afterok:$PRE scripts/slurm
 echo "r32 run:       $R32_RUN"
 R32_POST=$(sbatch --parsable $SBATCH_ARGS --dependency=afterany:$R32_RUN scripts/slurm/finetune_reaug_ruadapt_cw_r32_post.sbatch)
 echo "r32 post:      $R32_POST"
-
-FOCAL_RUN=$(sbatch --parsable $SBATCH_ARGS --dependency=afterok:$PRE scripts/slurm/finetune_reaug_ruadapt_cw_focal_g2_run.sbatch)
-echo "focal run:     $FOCAL_RUN"
-FOCAL_POST=$(sbatch --parsable $SBATCH_ARGS --dependency=afterany:$FOCAL_RUN scripts/slurm/finetune_reaug_ruadapt_cw_focal_g2_post.sbatch)
-echo "focal post:    $FOCAL_POST"
 
 squeue -u "$(whoami)"

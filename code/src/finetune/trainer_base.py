@@ -160,13 +160,12 @@ class SeqClsRunner:
         import numpy as np
         import torch
         import torch.nn as nn
-        import torch.nn.functional as F
         import pandas as pd
         from sklearn.metrics import balanced_accuracy_score, f1_score
         from transformers import Trainer, TrainingArguments, EarlyStoppingCallback, TrainerCallback
 
         from .peft_utils import save_adapter
-        from .data_prep import class_groups_to_array, TEXT_COL, LABEL_COL
+        from .data_prep import TEXT_COL, LABEL_COL
 
         tp = dict(self.cfg["training_params"])
         # Для PEFT-результата нужен адаптер, а не optimizer.pt/scheduler.pt.
@@ -187,26 +186,6 @@ class SeqClsRunner:
                 "balanced_accuracy": balanced_accuracy_score(labels, preds),
                 "macro_f1": f1_score(labels, preds, average="macro", zero_division=0),
             }
-
-        # ===== Новые конфигурируемые лоссы =====
-        loss_type = str(self.cfg.get("loss", "ce")).lower()  # "ce" | "focal"
-        focal_gamma = float(self.cfg.get("focal_gamma", 2.0))
-        use_hierarchy = bool(self.cfg.get("use_hierarchy", False))
-        hierarchy_lambda = float(self.cfg.get("hierarchy_lambda", 0.3))
-
-        # class_to_group тензор для hierarchy-регуляризатора
-        class_to_group = None
-        if use_hierarchy:
-            ctg_arr = class_groups_to_array(self.class_groups)
-            class_to_group = torch.tensor(ctg_arr, dtype=torch.long)
-            print(f"[Hierarchy] enabled, lambda={hierarchy_lambda}, "
-                  f"groups distribution: A={int((ctg_arr==0).sum())}, "
-                  f"B={int((ctg_arr==1).sum())}, C={int((ctg_arr==2).sum())}")
-
-        if loss_type == "focal":
-            print(f"[Loss] Focal (gamma={focal_gamma})")
-        else:
-            print(f"[Loss] CrossEntropy")
 
         # ===== Per-epoch test eval callback =====
         eval_test_each_epoch = bool(self.cfg.get("eval_test_each_epoch", False))
@@ -283,58 +262,15 @@ class SeqClsRunner:
             print(f"[TestEval] enabled — добавляет ~2-3 мин на эпоху, "
                   f"пишет в {self.output_dir}/test_curve.csv")
 
-        class ConfigurableLossTrainer(Trainer):
-            """Trainer с настраиваемым лоссом:
-            - loss_type='ce' | 'focal'
-            - class_weights — sklearn-balanced (опционально)
-            - hierarchy regularizer — штраф за вероятностную массу классов из
-              "неправильной" группы (A/B/C). Идея: модель не должна путать группы.
+        class ClassWeightedTrainer(Trainer):
+            """Trainer с CrossEntropy + class_weights (sklearn-balanced).
 
-            Все веса/маски лениво переносятся на device логитов на forward.
+            class_weights нужны на несбалансированных классах: иначе модель
+            предсказывает только большие классы и игнорирует хвост.
             """
-            def __init__(self, *targs,
-                         loss_type="ce",
-                         focal_gamma=2.0,
-                         class_weights=None,
-                         use_hierarchy=False,
-                         hierarchy_lambda=0.3,
-                         class_to_group=None,
-                         **tkwargs):
+            def __init__(self, *targs, class_weights=None, **tkwargs):
                 super().__init__(*targs, **tkwargs)
-                self._loss_type = loss_type
-                self._focal_gamma = focal_gamma
                 self._class_weights = class_weights
-                self._use_hierarchy = use_hierarchy
-                self._hierarchy_lambda = hierarchy_lambda
-                self._class_to_group = class_to_group
-
-            def _focal_loss(self, logits, labels, weight):
-                """Focal loss = -(1-pt)^gamma * log(pt) * alpha_t.
-
-                Совместима с class_weights (alpha_t берётся из weight[label]).
-                """
-                log_probs = F.log_softmax(logits, dim=-1)
-                log_pt = log_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
-                pt = log_pt.exp()
-                focal_term = (1 - pt) ** self._focal_gamma
-                loss = -focal_term * log_pt
-                if weight is not None:
-                    loss = loss * weight[labels]
-                return loss.mean()
-
-            def _hierarchy_penalty(self, logits, labels):
-                """Сумма softmax-вероятностей классов, чья группа != группа label.
-
-                Для каждого примера: считаем prob mass на классы из других групп
-                и штрафуем. Заставляет модель сначала научиться различать
-                группы A/B/C, и только потом — конкретный класс внутри группы.
-                """
-                ctg = self._class_to_group.to(logits.device)
-                probs = F.softmax(logits, dim=-1)
-                sample_groups = ctg[labels]                              # (B,)
-                wrong_group_mask = ctg.unsqueeze(0) != sample_groups.unsqueeze(1)  # (B, C)
-                wrong_prob = (probs * wrong_group_mask.to(probs.dtype)).sum(dim=-1)
-                return wrong_prob.mean()
 
             def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
                 labels = inputs.pop("labels")
@@ -347,15 +283,7 @@ class SeqClsRunner:
 
                 flat_logits = logits.view(-1, logits.size(-1))
                 flat_labels = labels.view(-1)
-
-                if self._loss_type == "focal":
-                    loss = self._focal_loss(flat_logits, flat_labels, weight)
-                else:
-                    loss = nn.CrossEntropyLoss(weight=weight)(flat_logits, flat_labels)
-
-                if self._use_hierarchy and self._class_to_group is not None:
-                    h = self._hierarchy_penalty(flat_logits, flat_labels)
-                    loss = loss + self._hierarchy_lambda * h
+                loss = nn.CrossEntropyLoss(weight=weight)(flat_logits, flat_labels)
 
                 return (loss, outputs) if return_outputs else loss
 
@@ -375,16 +303,9 @@ class SeqClsRunner:
                 batch_size=max(1, int(tp.get("per_device_eval_batch_size", 4))),
             ))
 
-        # Решаем, нужен ли кастомный Trainer.
-        # Если ничего из новых опций не включено и class_weights выкл — стандартный.
-        needs_custom = (
-            self.use_class_weights
-            or loss_type == "focal"
-            or use_hierarchy
-        )
-
-        if needs_custom:
-            trainer = ConfigurableLossTrainer(
+        # Кастомный Trainer нужен только если используем class_weights
+        if self.use_class_weights:
+            trainer = ClassWeightedTrainer(
                 model=self.model,
                 args=args,
                 train_dataset=self.train_ds,
@@ -393,12 +314,7 @@ class SeqClsRunner:
                 data_collator=self.collator,
                 compute_metrics=compute_metrics,
                 callbacks=callbacks,
-                loss_type=loss_type,
-                focal_gamma=focal_gamma,
-                class_weights=self.class_weights if self.use_class_weights else None,
-                use_hierarchy=use_hierarchy,
-                hierarchy_lambda=hierarchy_lambda,
-                class_to_group=class_to_group,
+                class_weights=self.class_weights,
             )
         else:
             trainer = Trainer(
@@ -443,10 +359,6 @@ class SeqClsRunner:
             "trainable_params": self.trainable_params,
             "train_time_sec": self.train_time_sec,
             "use_class_weights": bool(self.use_class_weights),
-            "loss": loss_type,
-            "focal_gamma": focal_gamma if loss_type == "focal" else None,
-            "use_hierarchy": use_hierarchy,
-            "hierarchy_lambda": hierarchy_lambda if use_hierarchy else None,
             "eval_test_each_epoch": eval_test_each_epoch,
             "recovered_from_checkpoint_save_error": recovered_from_save_error,
         }

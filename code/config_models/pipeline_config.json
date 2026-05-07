@@ -46,20 +46,29 @@
       "target_count": 15,
       "max_retries": 5,
       "oversample_factor": 5,
-      "max_examples_in_prompt": 5
+      "max_examples_in_prompt": 5,
+      "small_class_source_threshold": 6,
+      "small_class_temperature": 0.9,
+      "similarity_increase_after_attempt": 2,
+      "similarity_step": 0.01
     },
     "stage2": {
       "target_count": 35,
       "max_retries": 5,
       "oversample_factor": 5,
-      "originals_only_sources": true
+      "small_class_source_threshold": 6,
+      "small_class_temperature": 0.9,
+      "similarity_increase_after_attempt": 2,
+      "similarity_step": 0.01
     },
     "stage3": {
       "target_count": 50,
       "max_retries": 20,
       "oversample_factor": 3,
       "min_judge_score": 2.5,
-      "originals_only_sources": true
+      "use_judge": false,
+      "pivot_rounds": 2,
+      "similarity_step": 0.10
     }
   },
   "judge": {

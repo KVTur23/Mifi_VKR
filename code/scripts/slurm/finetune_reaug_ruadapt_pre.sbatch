@@ -19,7 +19,6 @@ MODEL_MARKER=/tmp/kvt/models/.finetune_ruadapt_qwen3_32b_copy_complete
 RUNS="
 reaug_ruadapt_qwen3_32b_qlora_cw
 reaug_ruadapt_qwen3_32b_qlora_cw_r32
-reaug_ruadapt_qwen3_32b_qlora_cw_focal_g2
 "
 
 echo "=== common pre | RuadaptQwen3-32B | $(date) ==="

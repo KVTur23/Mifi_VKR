@@ -1,8 +1,9 @@
 """
-evaluate_finetuned.py — Инференс адаптера и расчёт метрик
+evaluate_finetuned.py - Инференс адаптера и расчёт метрик
 
 Грузит базовую модель + PEFT-адаптер, прогоняет test, пишет per-sample preds
-и инкрементально обновляет results/finetune_results.csv.
+и сохраняет метрики в results/finetune/<run_key>.json (один файл на прогон).
+Сводную таблицу собирает notebooks/aggregate_results.ipynb.
 """
 
 import json
@@ -20,12 +21,16 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.utils.data_loader import load_test_set, TEXT_COL, LABEL_COL
 
 
-RESULTS_COLUMNS = [
-    "run_key", "method", "model",
-    "balanced_accuracy", "macro_f1",
-    "f1_group_A", "f1_group_B", "f1_group_C",
-    "trainable_params", "train_time_sec", "timestamp",
-]
+RESULTS_DIR = PROJECT_ROOT / "results" / "finetune"
+
+
+def _save_result_json(run_key: str, row: dict) -> Path:
+    """Один прогон - один файл results/finetune/<run_key>.json. Перезапись свежими данными."""
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = RESULTS_DIR / f"{run_key}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(row, f, ensure_ascii=False, indent=2)
+    return path
 
 
 def load_finetuned_model(adapter_dir: str, base_model_name: str,
@@ -121,20 +126,6 @@ def _f1_per_group(y_true: np.ndarray, y_pred: np.ndarray,
     return out
 
 
-def _append_result_row(results_csv: Path, row: dict):
-    """Инкрементальный апдейт CSV — перезапишет строку с тем же run_key."""
-    results_csv.parent.mkdir(parents=True, exist_ok=True)
-
-    if results_csv.exists():
-        df = pd.read_csv(results_csv)
-        df = df[df["run_key"] != row["run_key"]]
-    else:
-        df = pd.DataFrame(columns=RESULTS_COLUMNS)
-
-    df = pd.concat([df, pd.DataFrame([row], columns=RESULTS_COLUMNS)], ignore_index=True)
-    df.to_csv(results_csv, index=False)
-
-
 def evaluate(adapter_dir: str, config_path: str, pipeline_cfg,
              run_key: str,
              model=None, tokenizer=None) -> dict:
@@ -142,8 +133,8 @@ def evaluate(adapter_dir: str, config_path: str, pipeline_cfg,
     Инференс на test + метрики + per-group F1 + classification_report.
 
     Артефакты:
-      - results/preds_<run_key>.csv       — per-sample предсказания
-      - results/finetune_results.csv      — агрегированные метрики (инкрементально)
+      - results/preds_<run_key>.csv          - per-sample предсказания
+      - results/finetune/<run_key>.json      - метрики этого прогона
 
     Если model/tokenizer переданы — используем их (in-memory, после train()).
     Иначе грузим из adapter_dir. Перезагрузка экономит память и исключает OOM-hang.
@@ -236,8 +227,8 @@ def evaluate(adapter_dir: str, config_path: str, pipeline_cfg,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
     }
 
-    results_csv = Path(common["results_csv"])
-    _append_result_row(results_csv, row)
+    saved_path = _save_result_json(run_key, row)
+    print(f"[Eval] Метрики сохранены: {saved_path.relative_to(PROJECT_ROOT)}")
 
     print("=" * 60)
     print(f"FINETUNE EVAL: {run_key}")

@@ -27,8 +27,6 @@ if [ -d "$TMP/Data/finetune_checkpoints/$RUN_NAME" ]; then
     cp -a "$TMP/Data/finetune_checkpoints/$RUN_NAME/." "$RUN_DIR/adapter/"
 fi
 
-[ -f "$TMP/results/config_used.json" ] && cp -a "$TMP/results/config_used.json" "$RUN_DIR/config_used.json"
-[ -f "$TMP/results/manifest.json" ] && cp -a "$TMP/results/manifest.json" "$RUN_DIR/manifest.json"
 
 echo "results:"
 ls -lah "$RUN_DIR/results"

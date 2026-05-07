@@ -31,7 +31,7 @@ echo "=== run | reaug_qwen3_32b_qlora_cw_r32 | SLURM $SLURM_JOB_ID | host=$(host
 nvidia-smi | head -20
 python -V
 
-python -u scripts/run_finetune_experiment.py \
+python -u scripts/run_finetune.py \
+    --config qwen3_32b_qlora_cw_r32.json \
     --run-name reaug_qwen3_32b_qlora_cw_r32 \
-    --experiment cw_r32 \
     --gpu A100_40
