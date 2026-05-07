@@ -38,8 +38,7 @@ echo "=== run | reaug_vistral_24b_qlora_cw_r32 | SLURM $SLURM_JOB_ID | host=$(ho
 nvidia-smi | head -20
 python -V
 
-python -u scripts/run_finetune_experiment.py \
+python -u scripts/run_finetune.py \
+    --config vistral_24b_qlora_cw_r32.json \
     --run-name reaug_vistral_24b_qlora_cw_r32 \
-    --experiment cw_r32 \
-    --base-config config_models/finetune_configs/vistral_24b_qlora.json \
     --gpu A100_40

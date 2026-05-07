@@ -19,7 +19,6 @@ MODEL_MARKER=/tmp/kvt/models/.finetune_vistral_24b_copy_complete
 RUNS="
 reaug_vistral_24b_qlora_cw
 reaug_vistral_24b_qlora_cw_r32
-reaug_vistral_24b_qlora_cw_focal_g2
 "
 
 echo "=== common pre | Vistral-24B | $(date) ==="

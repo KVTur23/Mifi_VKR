@@ -1,10 +1,12 @@
 """
-stage3_back_translation.py — Этап 3: обратный перевод (RU → pivot → RU)
+stage3_back_translation.py - Этап 3: обратный перевод (RU -> en/de/fr -> RU)
 
-Берём классы с 35–49 примерами и доводим до 50 через обратный перевод.
-NLLB-200 переводит RU→pivot→RU, потом валидация фильтрами,
-потом выгружаем NLLB и грузим vLLM — LLM-судья оценивает
-каждый перевод рядом с оригиналом и отбирает лучшие.
+Берём классы с 35-49 примерами и доводим до 50 через обратный перевод.
+NLLB-200 переводит RU -> (en/de/fr) -> RU, после фильтры (длина, langdetect,
+косинусное сходство) отбраковывают мусор, и из валидного пула берём первые
+N со случайным перемешиванием. По умолчанию LLM-судья отключён: на NLLB-выходах
+он стабильно ставит низкие оценки и режет ~92% и так чистого пула.
+Включается через `stage3.use_judge: true` в pipeline_config.
 
 Вход:  Data/data_after_stage2.csv  (или data_after_stage3.csv если чекпоинт есть)
 Выход: Data/data_after_stage3.csv
@@ -48,32 +50,46 @@ BATCH_SIZE = 64
 OVERSAMPLE_FACTOR = 3
 MIN_JUDGE_SCORE_STAGE3 = 2.5
 
+# LLM-судья на этом этапе по факту режет почти всё (NLLB-выходы получают
+# средние оценки 1.0-2.2 при пороге 2.5), а каждый его прогон - это +30s
+# на загрузку vLLM × N промежуточных языков × N кругов. Поэтому по умолчанию выключен:
+# кандидаты после фильтров идут прямо в чекпоинт со случайной выборкой.
+USE_JUDGE_STAGE3 = False
+
 LANG_RU = "rus_Cyrl"
 LANG_EN = "eng_Latn"
 LANG_DE = "deu_Latn"
 LANG_FR = "fra_Latn"
 PIVOT_LANGS = [LANG_EN, LANG_DE, LANG_FR]
-PIVOT_ROUNDS = 2
-SIMILARITY_THRESHOLD_STEP = 0.10
+
+# Сколько раундов промежуточных языков делаем. Каждый следующий раунд послабляет порог
+# косинусного сходства на SIM_STEP_PER_ROUND - добираем хвост упёртых классов.
+# В отличие от stage1/2 шаг применяется per-round, а не per-attempt
+PIVOT_ROUNDS = 5
+SIM_STEP_PER_ROUND = 0.10
+
+# Для NLLB temperature/top_p всегда фиксированные - модель не реагирует на
+# "малое число оригиналов" так, как vLLM на стейджах 1/2. Здесь это просто
+# хардкод в translate_batch (1.0 / 0.9), отдельной настройки не делаем.
 MAX_LENGTH = 512
 
 # regex для NER-плейсхолдеров типа [PERSON], [ORGANIZATION], [DATE_TIME] и т.д.
 _PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z_]*(?:\s[A-Z_]*)?\]")
 
-# промежуточный csv для пар фазы 1 — при рестарте подхватываем и сразу в фазу 2
+# промежуточный csv для пар фазы 1 - при рестарте подхватываем и сразу в фазу 2
 _PAIRS_CSV = DATA_DIR / "_stage3_pairs_cache.csv"
 
 
 def mask_placeholders(text: str) -> tuple[str, list[str]]:
     """
     Заменяет NER-плейсхолдеры на короткие маркеры <0>, <1>, ...
-    NLLB их не трогает — они короткие и похожи на HTML-теги.
+    NLLB их не трогает - они короткие и похожи на HTML-теги.
     Возвращает (замаскированный текст, список оригинальных плейсхолдеров).
     """
     placeholders = _PLACEHOLDER_RE.findall(text)
     masked = text
     for i, ph in enumerate(placeholders):
-        # заменяем по одному вхождению за раз — на случай одинаковых плейсхолдеров
+        # заменяем по одному вхождению за раз - на случай одинаковых плейсхолдеров
         masked = masked.replace(ph, f"<{i}>", 1)
     return masked, placeholders
 
@@ -81,7 +97,7 @@ def mask_placeholders(text: str) -> tuple[str, list[str]]:
 def unmask_placeholders(text: str, placeholders: list[str]) -> str:
     """
     Восстанавливает оригинальные плейсхолдеры из маркеров <0>, <1>, ...
-    Если NLLB потеряла маркер — пропускаем, текст останется без него.
+    Если NLLB потеряла маркер - пропускаем, текст останется без него.
     """
     for i, ph in enumerate(placeholders):
         text = text.replace(f"<{i}>", ph, 1)
@@ -106,7 +122,7 @@ def load_translation_models() -> tuple:
 
 
 def unload_from_gpu(*objects):
-    """Выгружает модели из GPU и чистит память — освобождаем место для vLLM."""
+    """Выгружает модели из GPU и чистит память - освобождаем место для vLLM."""
     # del внутри функции убивает только локальные ссылки,
     # поэтому снаружи тоже надо занулить переменные
     for obj in objects:
@@ -128,7 +144,7 @@ def load_sbert_on_gpu():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # если уже на CPU — выгружаем
+    # если уже на CPU - выгружаем
     if val_module._sbert_model is not None:
         del val_module._sbert_model
         val_module._sbert_model = None
@@ -187,12 +203,12 @@ def back_translate(
     pivot_lang: str = LANG_EN,
 ) -> list[str]:
     """
-    Обратный перевод: RU → pivot → RU с сохранением NER-плейсхолдеров.
+    Обратный перевод: RU -> промежуточный -> RU с сохранением NER-плейсхолдеров.
 
     Перед переводом маскируем [PERSON], [ORGANIZATION] и т.д. в короткие <0>, <1>, ...
     После перевода восстанавливаем обратно.
     """
-    # маскируем плейсхолдеры — NLLB их не ломает
+    # маскируем плейсхолдеры - NLLB их не ломает
     masked_texts = []
     all_placeholders = []
     for text in texts:
@@ -200,15 +216,15 @@ def back_translate(
         masked_texts.append(masked)
         all_placeholders.append(phs)
 
-    # RU → pivot
+    # RU -> промежуточный
     pivot_texts = []
-    for i in tqdm(range(0, len(masked_texts), BATCH_SIZE), desc=f"    RU→{pivot_lang}", leave=False):
+    for i in tqdm(range(0, len(masked_texts), BATCH_SIZE), desc=f"    RU->{pivot_lang}", leave=False):
         batch = masked_texts[i:i + BATCH_SIZE]
         pivot_texts.extend(translate_batch(batch, model, tokenizer, LANG_RU, pivot_lang, device))
 
-    # pivot → RU
+    # промежуточный -> RU
     ru_texts = []
-    for i in tqdm(range(0, len(pivot_texts), BATCH_SIZE), desc=f"    {pivot_lang}→RU", leave=False):
+    for i in tqdm(range(0, len(pivot_texts), BATCH_SIZE), desc=f"    {pivot_lang}->RU", leave=False):
         batch = pivot_texts[i:i + BATCH_SIZE]
         ru_texts.extend(translate_batch(batch, model, tokenizer, pivot_lang, LANG_RU, device))
 
@@ -242,18 +258,16 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     """
     Основная функция этапа 3.
 
-    Для каждого pivot-языка отдельно:
-    1. NLLB перевод + валидация фильтрами, копим пары оригинал→перевод
-    2. Выгружаем NLLB, грузим vLLM — LLM-судья отбирает лучшие
-    3. Сохраняем чекпоинт и следующим pivot добираем только оставшиеся классы
+    Для каждого промежуточного языка отдельно:
+    1. NLLB перевод + валидация фильтрами, копим пары оригинал->перевод
+    2. Выгружаем NLLB, грузим vLLM - LLM-судья отбирает лучшие
+    3. Сохраняем чекпоинт и следующим промежуточным языком добираем только оставшиеся классы
     """
     global TARGET_COUNT, MAX_RETRIES, MODEL_NLLB, BATCH_SIZE, OVERSAMPLE_FACTOR, MIN_JUDGE_SCORE_STAGE3
+    global PIVOT_ROUNDS, SIM_STEP_PER_ROUND, USE_JUDGE_STAGE3
 
-    # Флаг originals_only_sources: если True, BT берётся только из оригинальных
-    # писем (stage 0). Stage 2 используется только для дедупликации.
-    # Устраняет каскадирование синтетики через стадии.
-    originals_only_sources = True
-
+    # Если передан pipeline_config - переопределяем глобалы значениями из JSON,
+    # иначе остаются дефолты из шапки модуля
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage3
         TARGET_COUNT = s.target_count
@@ -262,23 +276,36 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         MIN_JUDGE_SCORE_STAGE3 = s.min_judge_score
         MODEL_NLLB = pipeline_cfg.gpu.nllb_model
         BATCH_SIZE = pipeline_cfg.gpu.nllb_batch_size
-        # _DotDict наследует dict — используем .get() с default
-        originals_only_sources = bool(s.get("originals_only_sources", True))
+        # _DotDict наследует dict - используем .get() с default
+        PIVOT_ROUNDS = int(s.get("pivot_rounds", PIVOT_ROUNDS))
+        SIM_STEP_PER_ROUND = float(s.get("similarity_step", SIM_STEP_PER_ROUND))
+        USE_JUDGE_STAGE3 = bool(s.get("use_judge", USE_JUDGE_STAGE3))
 
+    # Фиксируем сиды - иначе каждый ран будет тасовать BT-источники по-разному
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
+    # Считаем максимальный порог, до которого может дойти круг (для лога):
+    # на последнем round'e он будет = base + (PIVOT_ROUNDS-1)*step. Если выше 1.0 -
+    # это намеренно: косинус ограничен 1.0, так что фильтр фактически отключается
+    sim_max = SIMILARITY_THRESHOLD + (PIVOT_ROUNDS - 1) * SIM_STEP_PER_ROUND
+
     print("=" * 60)
-    print("ЭТАП 3: Обратный перевод (< 50 → 50)")
-    print(f"       источник BT: "
-          f"{'ТОЛЬКО ОРИГИНАЛЫ (stage 0)' if originals_only_sources else 'ВСЁ (legacy, каскад)'}")
+    print(f"ЭТАП 3: Обратный перевод (< {TARGET_COUNT} -> {TARGET_COUNT})")
+    print(f"       источник BT: ТОЛЬКО ОРИГИНАЛЫ (train_after_eda.csv)")
+    print(f"       NLLB: {MODEL_NLLB}, batch={BATCH_SIZE}, oversample={OVERSAMPLE_FACTOR}×")
+    print(f"       промежуточные языки: {len(PIVOT_LANGS)} ({', '.join(PIVOT_LANGS)}), "
+          f"rounds: {PIVOT_ROUNDS}, sim {SIMILARITY_THRESHOLD:.2f}->{sim_max:.2f} "
+          f"(+{SIM_STEP_PER_ROUND} за круг)")
+    print(f"       LLM-судья: "
+          f"{'enabled, threshold=' + str(MIN_JUDGE_SCORE_STAGE3) if USE_JUDGE_STAGE3 else 'disabled (random pick from validated pool)'}")
     print("=" * 60)
 
     # ==========================================================
     # Определяем сценарий запуска:
-    # 1) stage3.csv есть, все ≥ 50       → пропуск
-    # 2) stage3.csv есть, часть < 50     → доаугментация оставшихся
-    # 3) stage3.csv нет                  → полный прогон от stage 2
+    # 1) stage3.csv есть, все ≥ 50       -> пропуск
+    # 2) stage3.csv есть, часть < 50     -> доаугментация оставшихся
+    # 3) stage3.csv нет                  -> полный прогон от stage 2
     # ==========================================================
 
     stage3_file = DATA_DIR / STAGE_FILES[STAGE]
@@ -289,70 +316,74 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         print(f"[Данные] Найден чекпоинт этапа 3: {stage3_file.name} ({len(df)} записей)")
         classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
         if not classes_to_augment:
-            print("[Этап 3] Все классы уже ≥ 50 — этап пропущен")
+            print(f"[Этап 3] Все классы уже ≥ {TARGET_COUNT} - этап пропущен")
             return
-        print(f"[Этап 3] Чекпоинт неполный, {len(classes_to_augment)} классов < 50 — доаугментируем")
+        print(f"[Этап 3] Чекпоинт неполный, {len(classes_to_augment)} классов < {TARGET_COUNT} - доаугментируем")
     else:
         df = load_dataset(stage=STAGE - 1)
         classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
         if not classes_to_augment:
-            print("[Этап 3] Все классы уже имеют >= 50 примеров, этап пропущен")
-            save_checkpoint(df, stage=STAGE)
+            # Нечего догонять - выходим, файл уже на месте
+            print(f"[Этап 3] Все классы уже имеют >= {TARGET_COUNT} примеров, этап пропущен")
             return
 
     print(f"\n[Этап 3] Классов для аугментации: {len(classes_to_augment)}")
     for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
-        print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
+        print(f"  «{name}»: {count} -> нужно ещё {TARGET_COUNT - count}")
 
-    # Загружаем оригиналы (stage 0) для использования как BT-источников.
-    # Когда originals_only_sources=True — BT идёт только от них, что устраняет
-    # каскадирование синтетики (stage 1/2 → stage 3).
+    # Загружаем оригиналы (train_after_eda.csv) - BT идёт только от них.
+    # Это устраняет каскад (stage 1/2 -> stage 3), когда синтетика прошлых
+    # стейджей переводилась туда-обратно и копила шум NLLB поверх шума LLM
     df_original = load_dataset(stage=0)
 
-    from src.augmentation.llm_utils import load_llm, select_top_paraphrases
-
-    # Каждый pivot — отдельный цикл: перевод → фильтры → судья → чекпоинт.
-    # После первого круга en → de → fr запускаем второй круг с en и повышаем
-    # верхний порог косинусного сходства на 0.10, чтобы добрать хвост классов.
+    # Каждый промежуточный язык - отдельный цикл: перевод -> фильтры -> отбор -> чекпоинт.
+    # После первого круга en -> de -> fr запускаем следующий и повышаем
+    # верхний порог косинусного сходства на SIM_STEP_PER_ROUND, чтобы добрать
+    # хвост упёртых классов
     pivot_schedule = [
         (
             round_idx,
             pivot_idx,
             pivot_lang,
-            SIMILARITY_THRESHOLD + (round_idx - 1) * SIMILARITY_THRESHOLD_STEP,
+            SIMILARITY_THRESHOLD + (round_idx - 1) * SIM_STEP_PER_ROUND,
         )
         for round_idx in range(1, PIVOT_ROUNDS + 1)
         for pivot_idx, pivot_lang in enumerate(PIVOT_LANGS, start=1)
     ]
 
+    # NLLB и SBERT грузим один раз на этап и держим до конца - раньше выгружали
+    # между промежуточными языками, чтобы освободить GPU под vLLM-судью; теперь судьи нет
+    # и эта пляска просто тратит ~30-40s на каждой загрузке (×15 итераций)
+    model, tokenizer, device = load_translation_models()
+    sbert_model = load_sbert_on_gpu()
+
     for pivot_round, pivot_idx, pivot_lang, sim_threshold in pivot_schedule:
         classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
         if not classes_to_augment:
-            print("\n[Этап 3] Все классы уже ≥ 50 — оставшиеся pivot-языки не нужны")
+            print("\n[Этап 3] Все классы уже ≥ 50 - оставшиеся промежуточные языки не нужны")
             break
 
         print(
             f"\n[Этап 3] Круг {pivot_round}/{PIVOT_ROUNDS}, "
-            f"pivot {pivot_idx}/{len(PIVOT_LANGS)}: {pivot_lang}, "
+            f"промежуточный {pivot_idx}/{len(PIVOT_LANGS)}: {pivot_lang}, "
             f"cosine_threshold={sim_threshold:.2f}"
         )
         for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
-            print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
+            print(f"  «{name}»: {count} -> нужно ещё {TARGET_COUNT - count}")
 
         class_state = {}
         for class_name, current_count in classes_to_augment.items():
             existing = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
 
-            if originals_only_sources:
-                bt_sources = df_original[
-                    df_original[LABEL_COL] == class_name
-                ][TEXT_COL].tolist()
-                if not bt_sources:
-                    print(f"  [Внимание] Нет оригиналов для «{class_name}», "
-                          f"fallback на существующие тексты (legacy режим)")
-                    bt_sources = existing
-            else:
-                bt_sources = existing
+            # Источник для BT - только оригиналы из train_after_eda.csv
+            bt_sources = df_original[
+                df_original[LABEL_COL] == class_name
+            ][TEXT_COL].tolist()
+            if not bt_sources:
+                # Не должно случаться после EDA - но если случилось,
+                # пропускаем класс, чем брать синтетику и тащить каскад
+                print(f"  [Пропуск] Нет оригиналов для «{class_name}» в train_after_eda.csv")
+                continue
 
             class_state[class_name] = {
                 "existing": existing,
@@ -361,13 +392,11 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 "accepted_pairs": [],
             }
 
-        model, tokenizer, device = load_translation_models()
-        sbert_model = load_sbert_on_gpu()
-
         for attempt in range(1, MAX_RETRIES + 1):
+            #  копим пул ровно до n_needed .
             pending = {
                 name: state for name, state in class_state.items()
-                if len(state["accepted_pairs"]) < state["n_needed"] * 2
+                if len(state["accepted_pairs"]) < state["n_needed"]
             }
             if not pending:
                 break
@@ -379,7 +408,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             source_class: list[str] = []
 
             for class_name, state in pending.items():
-                pool_gap = state["n_needed"] * 2 - len(state["accepted_pairs"])
+                pool_gap = state["n_needed"] - len(state["accepted_pairs"])
                 n_to_generate = max(pool_gap, 1) * OVERSAMPLE_FACTOR
                 sources = select_sources(state["bt_sources"], n_to_generate)
                 all_sources.extend(sources)
@@ -437,17 +466,26 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 pd.DataFrame(cache_rows).to_csv(_PAIRS_CSV, index=False)
                 print(f"  [Кэш] {pivot_lang}, попытка {attempt}: сохранено {len(cache_rows)} пар")
 
-        print(f"\n[Этап 3][{pivot_lang}] Перевод завершён, выгружаем NLLB...")
-        unload_from_gpu(model, tokenizer, sbert_model)
-        model = tokenizer = sbert_model = None
-        import src.augmentation.validation as val_module
-        val_module._sbert_model = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        print(f"\n[Этап 3][{pivot_lang}] Перевод завершён, отбираем кандидатов")
 
-        print(f"\n[Этап 3][{pivot_lang}] Грузим LLM-судью...")
-        llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
+        # Этап выборки. С судьёй - vLLM оценивает пары "перевод vs оригинал"
+        # и берёт топ-N. Без судьи - просто перемешиваем пул и берём первые N
+        # В финальной версии судбя выключен, так как режет практически все
+        llm = None
+        select_top_paraphrases = None
+        if USE_JUDGE_STAGE3:
+            print(f"\n[Этап 3][{pivot_lang}] Грузим LLM-судью...")
+            # Для судьи нужно временно выгрузить NLLB+SBERT - vLLM съест VRAM
+            unload_from_gpu(model, tokenizer, sbert_model)
+            model = tokenizer = sbert_model = None
+            import src.augmentation.validation as val_module
+            val_module._sbert_model = None
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            from src.augmentation.llm_utils import load_llm, select_top_paraphrases
+            llm, _, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
 
         new_rows = []
         for class_name, state in class_state.items():
@@ -467,10 +505,17 @@ def run(config_path: str, pipeline_cfg=None) -> None:
             print(f"\n[Этап 3][{pivot_lang}] Класс «{class_name}»: "
                   f"{len(pairs)} кандидатов в пуле, нужно {n_needed}")
 
-            best = select_top_paraphrases(
-                paras, origs, class_name, llm,
-                n_needed=n_needed, min_score=MIN_JUDGE_SCORE_STAGE3,
-            )
+            if USE_JUDGE_STAGE3:
+                best = select_top_paraphrases(
+                    paras, origs, class_name, llm,
+                    n_needed=n_needed, min_score=MIN_JUDGE_SCORE_STAGE3,
+                )
+            else:
+                # Перемешиваем - иначе всегда брали бы пары в порядке генерации
+                # и одни оригиналы доминировали бы над другими
+                shuffled = list(paras)
+                random.shuffle(shuffled)
+                best = shuffled[:n_needed]
 
             for text in best:
                 new_rows.append({TEXT_COL: text, LABEL_COL: class_name})
@@ -489,17 +534,33 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
         save_checkpoint(df, stage=STAGE)
 
-        del llm
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if llm is not None:
+            del llm
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            # Если судья работал - он съел VRAM, NLLB+SBERT мы выгружали ДО него.
+            # Возвращаем их обратно, чтобы следующий промежуточный язык мог переводить.
+            # На USE_JUDGE_STAGE3=False этой ветки нет - модели держатся весь этап
+            model, tokenizer, device = load_translation_models()
+            sbert_model = load_sbert_on_gpu()
 
         if _PAIRS_CSV.exists():
             backup = _PAIRS_CSV.with_name(
                 f"_stage3_pairs_cache_round{pivot_round}_{pivot_lang}.bak.csv"
             )
             _PAIRS_CSV.rename(backup)
-            print(f"[Этап 3][{pivot_lang}] Кэш пар переименован → {backup.name}")
+            print(f"[Этап 3][{pivot_lang}] Кэш пар переименован -> {backup.name}")
+
+    # Все промежуточные языки пройдены - выгружаем NLLB+SBERT с GPU
+    print(f"\n[Этап 3] Все промежуточные языки пройдены, выгружаем NLLB и SBERT...")
+    unload_from_gpu(model, tokenizer, sbert_model)
+    model = tokenizer = sbert_model = None
+    import src.augmentation.validation as val_module
+    val_module._sbert_model = None
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     print(f"\n[Этап 3] Итоговое распределение:")
     dist = get_class_distribution(df)
