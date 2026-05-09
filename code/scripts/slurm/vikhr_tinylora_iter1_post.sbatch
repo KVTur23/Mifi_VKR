@@ -3,15 +3,15 @@
 #SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
 #SBATCH --time=1:00:00
-#SBATCH --job-name=q25_32b_iter1_post
-#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen25_32b_qlora_iter1/logs/post_%j.log
-#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen25_32b_qlora_iter1/logs/post_%j.err
+#SBATCH --job-name=vik_tiny_post
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_nemo_12b_tinylora_iter1/logs/post_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_nemo_12b_tinylora_iter1/logs/post_%j.err
 
 set -e
 
-RUN_NAME=qwen25_32b_qlora_iter1
+RUN_NAME=vikhr_nemo_12b_tinylora_iter1
 RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs/$RUN_NAME
-TMP=/tmp/kvt/qwen25_32b/$RUN_NAME/code
+TMP=/tmp/kvt/vikhr/$RUN_NAME/code
 
 echo "=== post | $RUN_NAME | $(date) ==="
 

@@ -1,5 +1,5 @@
 {
-  "run_key": "yandexgpt_5_lite_8b_tinylora_iter1",
+  "run_key": "yandexgpt_5_lite_8b_tinylora_iter2",
   "model_name": "yandex/YandexGPT-5-Lite-8B-instruct",
   "method": "tinylora",
   "task_type": "SEQ_CLS",
@@ -7,11 +7,11 @@
   "max_seq_length": 2048,
   "trust_remote_code": true,
   "use_class_weights": false,
-  "val_split": 0.10,
+  "val_split": 0.2,
   "eval_test_each_epoch": true,
   "peft_config": {
     "r": 2,
-    "u": 64,
+    "u": 128,
     "weight_tying": 0.0,
     "target_modules": [
       "q_proj",
@@ -29,7 +29,7 @@
     "per_device_train_batch_size": 2,
     "per_device_eval_batch_size": 4,
     "gradient_accumulation_steps": 8,
-    "learning_rate": 1e-3,
+    "learning_rate": 5e-4,
     "lr_scheduler_type": "cosine",
     "warmup_ratio": 0.03,
     "weight_decay": 0.01,

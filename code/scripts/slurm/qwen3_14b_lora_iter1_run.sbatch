@@ -6,10 +6,10 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=12:00:00
-#SBATCH --job-name=q25_32b_iter1
-#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen25_32b_qlora_iter1/logs/run_%j.log
-#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen25_32b_qlora_iter1/logs/run_%j.err
+#SBATCH --time=10:00:00
+#SBATCH --job-name=q14b_lora
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_lora_iter1/logs/run_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_lora_iter1/logs/run_%j.err
 
 set -e
 
@@ -31,12 +31,12 @@ export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 source /mnt/pool/6/kvturanosov/VKR/venv/bin/activate
-cd /tmp/kvt/qwen25_32b/qwen25_32b_qlora_iter1/code
+cd /tmp/kvt/qwen3_14b/qwen3_14b_lora_iter1/code
 
-echo "=== run | qwen25_32b_qlora_iter1 | SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
+echo "=== run | qwen3_14b_lora_iter1 | SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
 nvidia-smi | head -20
 python -V
 
 python -u scripts/run_finetune.py \
-    --config qwen25_32b_qlora_iter1.json \
+    --config qwen3_14b_lora_iter1.json \
     --gpu A100_40

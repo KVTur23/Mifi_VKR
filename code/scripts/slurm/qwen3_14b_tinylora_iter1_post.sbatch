@@ -3,13 +3,13 @@
 #SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
 #SBATCH --time=1:00:00
-#SBATCH --job-name=q14b_iter1_post
-#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_lora_iter1/logs/post_%j.log
-#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_lora_iter1/logs/post_%j.err
+#SBATCH --job-name=q14b_tiny_post
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_tinylora_iter1/logs/post_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_tinylora_iter1/logs/post_%j.err
 
 set -e
 
-RUN_NAME=qwen3_14b_lora_iter1
+RUN_NAME=qwen3_14b_tinylora_iter1
 RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs/$RUN_NAME
 TMP=/tmp/kvt/qwen3_14b/$RUN_NAME/code
 

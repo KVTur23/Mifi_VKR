@@ -1,11 +1,10 @@
 {
-  "run_key": "yandexgpt_5_lite_8b_tinylora_iter1",
-  "model_name": "yandex/YandexGPT-5-Lite-8B-instruct",
+  "run_key": "qwen3_14b_tinylora_iter1",
+  "model_name": "Qwen/Qwen3-14B",
   "method": "tinylora",
   "task_type": "SEQ_CLS",
   "num_labels": 36,
   "max_seq_length": 2048,
-  "trust_remote_code": true,
   "use_class_weights": false,
   "val_split": 0.10,
   "eval_test_each_epoch": true,
