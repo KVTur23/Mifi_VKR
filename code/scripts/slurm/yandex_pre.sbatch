@@ -16,10 +16,13 @@ BASE_TMP=/tmp/kvt/yandex
 MODEL_DIR=models--yandex--YandexGPT-5-Lite-8B-instruct
 MODEL_MARKER=/tmp/kvt/models/.yandex_5_lite_8b_copy_complete
 
-# Все итерации yandex-8B (на этой партии запустится только iter1, остальные
-# добавим когда подберём гиперы по результатам iter1)
+# 4 PEFT-метода для Yandex-8B (iter1 = базовые гиперы r=16/alpha=32, без CW).
+# Все 4 запускаются параллельно после общего pre.
 RUNS="
 yandexgpt_5_lite_8b_lora_iter1
+yandexgpt_5_lite_8b_qlora_iter1
+yandexgpt_5_lite_8b_adalora_iter1
+yandexgpt_5_lite_8b_tinylora_iter1
 "
 
 echo "=== yandex pre | $(date) ==="
