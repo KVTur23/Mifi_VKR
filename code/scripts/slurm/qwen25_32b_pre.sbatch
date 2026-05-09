@@ -16,6 +16,16 @@ BASE_TMP=/tmp/kvt/qwen25_32b
 MODEL_DIR=models--Qwen--Qwen2.5-32B-Instruct
 MODEL_MARKER=/tmp/kvt/models/.qwen25_32b_copy_complete
 
+has_complete_model_cache() {
+    local ROOT="$1"
+    local SNAPSHOTS="$ROOT/$MODEL_DIR/snapshots"
+
+    [ -d "$SNAPSHOTS" ] || return 1
+    [ -n "$(find "$SNAPSHOTS" -name config.json -exec grep -l '"model_type"' {} \; -print -quit 2>/dev/null)" ] || return 1
+    [ -n "$(find "$SNAPSHOTS" -name tokenizer_config.json -print -quit 2>/dev/null)" ] || return 1
+    [ -n "$(find "$SNAPSHOTS" \( -name model.safetensors -o -name model.safetensors.index.json -o -name 'model-*-of-*.safetensors' -o -name pytorch_model.bin \) -print -quit 2>/dev/null)" ] || return 1
+}
+
 # 2 PEFT-метода для Qwen2.5-32B (LoRA и TinyLoRA - / в матрице)
 RUNS="
 qwen25_32b_qlora_iter1
@@ -27,18 +37,24 @@ echo "=== qwen25_32b pre | $(date) ==="
 mkdir -p "$BASE_RUN_DIR/qwen25_32b_pre/logs"
 mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 
-if [ ! -f "$MODEL_MARKER" ]; then
-    if [ -d "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" ]; then
-        echo "copy $MODEL_DIR -> /tmp/kvt/models"
-        cp -a "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" /tmp/kvt/models/
-        [ -f /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG ] && cp -a /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG /tmp/kvt/models/
-        date > "$MODEL_MARKER"
-    else
+if [ -f "$MODEL_MARKER" ] && has_complete_model_cache /tmp/kvt/models; then
+    echo "qwen2.5-32B model already copied"
+else
+    if [ ! -d "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" ]; then
         echo "[ERROR] missing $MODEL_DIR в /mnt/pool/6/kvturanosov/VKR/models/"
         exit 1
     fi
-else
-    echo "qwen2.5-32B model already copied"
+    if ! has_complete_model_cache /mnt/pool/6/kvturanosov/VKR/models; then
+        echo "[ERROR] incomplete model cache: /mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR"
+        echo "        expected config.json with model_type, tokenizer_config.json and safetensors/bin weights"
+        exit 1
+    fi
+
+    echo "copy/update $MODEL_DIR -> /tmp/kvt/models"
+    rm -rf "/tmp/kvt/models/$MODEL_DIR"
+    cp -a "/mnt/pool/6/kvturanosov/VKR/models/$MODEL_DIR" /tmp/kvt/models/
+    [ -f /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG ] && cp -a /mnt/pool/6/kvturanosov/VKR/models/CACHEDIR.TAG /tmp/kvt/models/
+    date > "$MODEL_MARKER"
 fi
 
 for RUN_NAME in $RUNS; do
