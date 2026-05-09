@@ -20,7 +20,7 @@
       "vram_gb": 40,
       "nllb_batch_size": 64,
       "rubert_batch_size": 64,
-      "gpu_memory_utilization": 0.92,
+      "gpu_memory_utilization": 0.88,
       "enforce_eager": true,
       "nllb_model": "facebook/nllb-200-3.3B"
     },
