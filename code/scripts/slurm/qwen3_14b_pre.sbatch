@@ -16,10 +16,12 @@ BASE_TMP=/tmp/kvt/qwen3_14b
 MODEL_DIR=models--Qwen--Qwen3-14B
 MODEL_MARKER=/tmp/kvt/models/.qwen3_14b_copy_complete
 
-# Все итерации Qwen3-14B (на этой партии запустится только iter1; остальные
-# добавим когда подберём гиперы по результатам iter1)
+# 4 PEFT-метода для Qwen3-14B (iter1 = базовые гиперы, без CW)
 RUNS="
 qwen3_14b_lora_iter1
+qwen3_14b_qlora_iter1
+qwen3_14b_adalora_iter1
+qwen3_14b_tinylora_iter1
 "
 
 echo "=== qwen3_14b pre | $(date) ==="

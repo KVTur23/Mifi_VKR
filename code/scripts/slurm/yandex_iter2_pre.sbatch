@@ -3,30 +3,31 @@
 #SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
 #SBATCH --time=1:00:00
-#SBATCH --job-name=vikhr_pre
-#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_pre/logs/pre_%j.log
-#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_pre/logs/pre_%j.err
+#SBATCH --job-name=yandex2_pre
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/yandex_iter2_pre/logs/pre_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/yandex_iter2_pre/logs/pre_%j.err
 
 set -e
 
 SRC=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation/code
 SRC_TREE=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation
 BASE_RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs
-BASE_TMP=/tmp/kvt/vikhr
-MODEL_DIR=models--Vikhrmodels--Vikhr-Nemo-12B-Instruct-R-21-09-24
-MODEL_MARKER=/tmp/kvt/models/.vikhr_nemo_12b_copy_complete
+BASE_TMP=/tmp/kvt/yandex
+MODEL_DIR=models--yandex--YandexGPT-5-Lite-8B-instruct
+MODEL_MARKER=/tmp/kvt/models/.yandex_5_lite_8b_copy_complete
 
-# 4 PEFT-метода для Vikhr-Nemo-12B (iter1, без CW)
+# 4 PEFT-метода для Yandex-8B iter2 (анти-overfit пакет гиперпараметров).
+# Все 4 запускаются параллельно после общего pre.
 RUNS="
-vikhr_nemo_12b_lora_iter1
-vikhr_nemo_12b_qlora_iter1
-vikhr_nemo_12b_adalora_iter1
-vikhr_nemo_12b_tinylora_iter1
+yandexgpt_5_lite_8b_lora_iter2
+yandexgpt_5_lite_8b_qlora_iter2
+yandexgpt_5_lite_8b_adalora_iter2
+yandexgpt_5_lite_8b_tinylora_iter2
 "
 
-echo "=== vikhr pre | $(date) ==="
+echo "=== yandex iter2 pre | $(date) ==="
 
-mkdir -p "$BASE_RUN_DIR/vikhr_pre/logs"
+mkdir -p "$BASE_RUN_DIR/yandex_iter2_pre/logs"
 mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 
 if [ ! -f "$MODEL_MARKER" ]; then
@@ -37,10 +38,11 @@ if [ ! -f "$MODEL_MARKER" ]; then
         date > "$MODEL_MARKER"
     else
         echo "[ERROR] missing $MODEL_DIR в /mnt/pool/6/kvturanosov/VKR/models/"
+        echo "        Скачай через: source venv && HF_HUB_CACHE=/mnt/pool/.../models hf download yandex/YandexGPT-5-Lite-8B-instruct"
         exit 1
     fi
 else
-    echo "vikhr-12B model already copied"
+    echo "yandex 8B model already copied"
 fi
 
 for RUN_NAME in $RUNS; do
@@ -72,4 +74,4 @@ for RUN_NAME in $RUNS; do
 done
 
 echo
-echo "vikhr pre ready"
+echo "yandex iter2 pre ready"

@@ -2,31 +2,29 @@
 #SBATCH --partition=gpu
 #SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
-#SBATCH --time=1:00:00
-#SBATCH --job-name=vikhr_pre
-#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_pre/logs/pre_%j.log
-#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_pre/logs/pre_%j.err
+#SBATCH --time=1:30:00
+#SBATCH --job-name=ruad_pre
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/ruadapt_pre/logs/pre_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/ruadapt_pre/logs/pre_%j.err
 
 set -e
 
 SRC=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation/code
 SRC_TREE=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation
 BASE_RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs
-BASE_TMP=/tmp/kvt/vikhr
-MODEL_DIR=models--Vikhrmodels--Vikhr-Nemo-12B-Instruct-R-21-09-24
-MODEL_MARKER=/tmp/kvt/models/.vikhr_nemo_12b_copy_complete
+BASE_TMP=/tmp/kvt/ruadapt
+MODEL_DIR=models--RefalMachine--RuadaptQwen3-32B-Instruct
+MODEL_MARKER=/tmp/kvt/models/.ruadapt_qwen3_32b_copy_complete
 
-# 4 PEFT-метода для Vikhr-Nemo-12B (iter1, без CW)
+# 2 PEFT-метода для RuadaptQwen3-32B (LoRA и TinyLoRA - / в матрице)
 RUNS="
-vikhr_nemo_12b_lora_iter1
-vikhr_nemo_12b_qlora_iter1
-vikhr_nemo_12b_adalora_iter1
-vikhr_nemo_12b_tinylora_iter1
+ruadapt_qwen3_32b_qlora_iter1
+ruadapt_qwen3_32b_adalora_iter1
 "
 
-echo "=== vikhr pre | $(date) ==="
+echo "=== ruadapt pre | $(date) ==="
 
-mkdir -p "$BASE_RUN_DIR/vikhr_pre/logs"
+mkdir -p "$BASE_RUN_DIR/ruadapt_pre/logs"
 mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 
 if [ ! -f "$MODEL_MARKER" ]; then
@@ -40,7 +38,7 @@ if [ ! -f "$MODEL_MARKER" ]; then
         exit 1
     fi
 else
-    echo "vikhr-12B model already copied"
+    echo "ruadapt-32B model already copied"
 fi
 
 for RUN_NAME in $RUNS; do
@@ -72,4 +70,4 @@ for RUN_NAME in $RUNS; do
 done
 
 echo
-echo "vikhr pre ready"
+echo "ruadapt pre ready"

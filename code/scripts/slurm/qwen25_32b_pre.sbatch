@@ -2,7 +2,7 @@
 #SBATCH --partition=gpu
 #SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
-#SBATCH --time=1:00:00
+#SBATCH --time=1:30:00
 #SBATCH --job-name=q25_32b_pre
 #SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen25_32b_pre/logs/pre_%j.log
 #SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen25_32b_pre/logs/pre_%j.err
@@ -16,8 +16,10 @@ BASE_TMP=/tmp/kvt/qwen25_32b
 MODEL_DIR=models--Qwen--Qwen2.5-32B-Instruct
 MODEL_MARKER=/tmp/kvt/models/.qwen25_32b_copy_complete
 
+# 2 PEFT-метода для Qwen2.5-32B (LoRA и TinyLoRA - / в матрице)
 RUNS="
 qwen25_32b_qlora_iter1
+qwen25_32b_adalora_iter1
 "
 
 echo "=== qwen25_32b pre | $(date) ==="

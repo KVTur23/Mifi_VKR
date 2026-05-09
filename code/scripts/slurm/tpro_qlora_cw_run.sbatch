@@ -6,10 +6,10 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=8:00:00
-#SBATCH --job-name=yandex_iter1
-#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/yandexgpt_5_lite_8b_lora_iter1/logs/run_%j.log
-#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/yandexgpt_5_lite_8b_lora_iter1/logs/run_%j.err
+#SBATCH --time=12:00:00
+#SBATCH --job-name=tpro_qlora_cw
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/tpro_it_21_qlora_cw/logs/run_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/tpro_it_21_qlora_cw/logs/run_%j.err
 
 set -e
 
@@ -31,12 +31,12 @@ export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 source /mnt/pool/6/kvturanosov/VKR/venv/bin/activate
-cd /tmp/kvt/yandex/yandexgpt_5_lite_8b_lora_iter1/code
+cd /tmp/kvt/tpro/tpro_it_21_qlora_cw/code
 
-echo "=== run | yandexgpt_5_lite_8b_lora_iter1 | SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
+echo "=== run | tpro_it_21_qlora_cw | SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
 nvidia-smi | head -20
 python -V
 
 python -u scripts/run_finetune.py \
-    --config yandexgpt_5_lite_8b_lora_iter1.json \
+    --config tpro_it_21_qlora_cw.json \
     --gpu A100_40
