@@ -1,0 +1,13 @@
+{
+  "run_key": "qwen3_14b_qlora_iter1",
+  "method": "qlora",
+  "model": "Qwen/Qwen3-14B",
+  "balanced_accuracy": 0.4894579424837361,
+  "macro_f1": 0.48415388753082084,
+  "f1_group_A": 0.7235414823103012,
+  "f1_group_B": 0.5215458937198068,
+  "f1_group_C": 0.4305555555555555,
+  "trainable_params": 64409600,
+  "train_time_sec": 8289.384348392487,
+  "timestamp": "2026-05-10T01:25:13"
+}
