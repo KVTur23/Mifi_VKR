@@ -1,21 +1,19 @@
 #!/bin/bash
 #SBATCH --partition=gpu
+#SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
 #SBATCH --time=1:00:00
+#SBATCH --job-name=radp_a4cw_post
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/ruadapt_qwen3_32b_adalora_iter4_cw/logs/post_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/ruadapt_qwen3_32b_adalora_iter4_cw/logs/post_%j.err
 
 set -e
 
-if [ -z "$RUN_NAME" ]; then
-    echo "[ERROR] RUN_NAME must be set"
-    exit 1
-fi
+RUN_NAME=ruadapt_qwen3_32b_adalora_iter4_cw
+RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs/$RUN_NAME
+TMP=/tmp/kvt/ruadapt/$RUN_NAME/code
 
-BASE_RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs
-BASE_TMP=/tmp/kvt/${TMP_GROUP:-iter4_cw}
-RUN_DIR="$BASE_RUN_DIR/$RUN_NAME"
-TMP="$BASE_TMP/$RUN_NAME/code"
-
-echo "=== iter4 cw post | $RUN_NAME | $(date) ==="
+echo "=== post | $RUN_NAME | $(date) ==="
 
 mkdir -p "$RUN_DIR/results" "$RUN_DIR/logs" "$RUN_DIR/adapter"
 
