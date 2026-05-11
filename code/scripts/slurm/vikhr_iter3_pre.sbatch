@@ -3,29 +3,29 @@
 #SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
 #SBATCH --time=1:30:00
-#SBATCH --job-name=q14b3_pre
-#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_iter3_pre/logs/pre_%j.log
-#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_iter3_pre/logs/pre_%j.err
+#SBATCH --job-name=vik3_pre
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_iter3_pre/logs/pre_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_iter3_pre/logs/pre_%j.err
 
 set -e
 
 SRC=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation/code
 SRC_TREE=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation
 BASE_RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs
-BASE_TMP=/tmp/kvt/qwen3_14b
-MODEL_DIR=models--Qwen--Qwen3-14B
-MODEL_MARKER=/tmp/kvt/models/.qwen3_14b_copy_complete
+BASE_TMP=/tmp/kvt/vikhr
+MODEL_DIR=models--Vikhrmodels--Vikhr-Nemo-12B-Instruct-R-21-09-24
+MODEL_MARKER=/tmp/kvt/models/.vikhr_nemo_12b_copy_complete
 
 RUNS="
-qwen3_14b_lora_iter3
-qwen3_14b_qlora_iter3
-qwen3_14b_adalora_iter3
-qwen3_14b_tinylora_iter3
+vikhr_nemo_12b_lora_iter3
+vikhr_nemo_12b_qlora_iter3
+vikhr_nemo_12b_adalora_iter3
+vikhr_nemo_12b_tinylora_iter3
 "
 
-echo "=== qwen3_14b_iter3 pre | $(date) ==="
+echo "=== vikhr_iter3 pre | $(date) ==="
 
-mkdir -p "$BASE_RUN_DIR/qwen3_14b_iter3_pre/logs"
+mkdir -p "$BASE_RUN_DIR/vikhr_iter3_pre/logs"
 mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 
 if [ ! -f "$MODEL_MARKER" ]; then
@@ -39,7 +39,7 @@ if [ ! -f "$MODEL_MARKER" ]; then
         exit 1
     fi
 else
-    echo "qwen3-14B model already copied"
+    echo "vikhr-12B model already copied"
 fi
 
 for RUN_NAME in $RUNS; do
@@ -71,4 +71,4 @@ for RUN_NAME in $RUNS; do
 done
 
 echo
-echo "qwen3_14b_iter3 pre ready"
+echo "vikhr_iter3 pre ready"

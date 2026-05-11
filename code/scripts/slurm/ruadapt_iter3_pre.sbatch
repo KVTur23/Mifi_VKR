@@ -18,6 +18,7 @@ MODEL_MARKER=/tmp/kvt/models/.ruadapt_qwen3_32b_copy_complete
 
 RUNS="
 ruadapt_qwen3_32b_qlora_iter3
+ruadapt_qwen3_32b_adalora_iter3
 "
 
 echo "=== ruadapt_iter3 pre | $(date) ==="
@@ -36,7 +37,7 @@ if [ ! -f "$MODEL_MARKER" ]; then
         exit 1
     fi
 else
-    echo "ruadapt-iter3 model already copied"
+    echo "ruadapt-32B model already copied"
 fi
 
 for RUN_NAME in $RUNS; do
