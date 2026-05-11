@@ -42,20 +42,16 @@ Fine-tune использует:
 - test: `Data/data_test.csv`;
 - конфиг эксперимента из `config_models/finetune_configs/`.
 
-Один эксперимент:
+Пока запустить два эксперимента.
 
 ```bash
-python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_14b_lora_iter3.json
+python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_32b_qlora_no_cw.json
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_32b_qlora_cw.json
 
 ```
 
-Другой пример:
 
-```bash
-python scripts/run_finetune.py \
-  --gpu A100_40 \
-  --config config_models/finetune_configs/qwen3_14b_lora_iter3.json
-```
 
 Результаты сохраняются в:
 
