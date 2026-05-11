@@ -18,6 +18,7 @@ MODEL_MARKER=/tmp/kvt/models/.vistral_24b_copy_complete
 
 RUNS="
 vistral_24b_qlora_iter3
+vistral_24b_adalora_iter3
 "
 
 echo "=== vistral_iter3 pre | $(date) ==="
@@ -36,7 +37,7 @@ if [ ! -f "$MODEL_MARKER" ]; then
         exit 1
     fi
 else
-    echo "vistral-iter3 model already copied"
+    echo "vistral-24B model already copied"
 fi
 
 for RUN_NAME in $RUNS; do

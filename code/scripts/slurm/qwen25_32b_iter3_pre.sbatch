@@ -18,6 +18,7 @@ MODEL_MARKER=/tmp/kvt/models/.qwen25_32b_copy_complete
 
 RUNS="
 qwen25_32b_qlora_iter3
+qwen25_32b_adalora_iter3
 "
 
 echo "=== qwen25_32b_iter3 pre | $(date) ==="
