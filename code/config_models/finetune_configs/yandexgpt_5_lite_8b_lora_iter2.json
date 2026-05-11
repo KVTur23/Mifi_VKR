@@ -7,7 +7,7 @@
   "max_seq_length": 2048,
   "trust_remote_code": true,
   "use_class_weights": false,
-  "val_split": 0.15,
+  "val_split": 0.2,
   "eval_test_each_epoch": true,
   "peft_config": {
     "r": 16,

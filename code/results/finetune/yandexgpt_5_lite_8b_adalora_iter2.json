@@ -1,0 +1,13 @@
+{
+  "run_key": "yandexgpt_5_lite_8b_adalora_iter2",
+  "method": "adalora",
+  "model": "yandex/YandexGPT-5-Lite-8B-instruct",
+  "balanced_accuracy": 0.4033080106988837,
+  "macro_f1": 0.40007961704526573,
+  "f1_group_A": 0.6184699596228775,
+  "f1_group_B": 0.4853426300794722,
+  "f1_group_C": 0.2916666666666667,
+  "trainable_params": 42094080,
+  "train_time_sec": 5602.003155469894,
+  "timestamp": "2026-05-09T21:56:07"
+}
