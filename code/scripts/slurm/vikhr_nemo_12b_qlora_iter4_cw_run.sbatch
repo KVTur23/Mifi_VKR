@@ -1,21 +1,17 @@
 #!/bin/bash
 #SBATCH --partition=gpu
+#SBATCH --nodelist=t2n1
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=12:00:00
+#SBATCH --time=10:00:00
+#SBATCH --job-name=vik_q4cw
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_nemo_12b_qlora_iter4_cw/logs/run_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/vikhr_nemo_12b_qlora_iter4_cw/logs/run_%j.err
 
 set -e
-
-if [ -z "$RUN_NAME" ]; then
-    echo "[ERROR] RUN_NAME must be set"
-    exit 1
-fi
-
-BASE_TMP=/tmp/kvt/${TMP_GROUP:-iter4_cw}
-GPU_PROFILE=${GPU_PROFILE:-A100_40}
 
 mkdir -p /tmp/kvt/cache/tmp /tmp/kvt/cache/triton /tmp/kvt/cache/torchinductor /tmp/kvt/cache/cuda
 
@@ -35,12 +31,12 @@ export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 source /mnt/pool/6/kvturanosov/VKR/venv/bin/activate
-cd "$BASE_TMP/$RUN_NAME/code"
+cd /tmp/kvt/vikhr/vikhr_nemo_12b_qlora_iter4_cw/code
 
-echo "=== iter4 cw run | $RUN_NAME | SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
+echo "=== run | vikhr_nemo_12b_qlora_iter4_cw | SLURM $SLURM_JOB_ID | host=$(hostname) | $(date) ==="
 nvidia-smi | head -20
 python -V
 
 python -u scripts/run_finetune.py \
-    --config "$RUN_NAME.json" \
-    --gpu "$GPU_PROFILE"
+    --config vikhr_nemo_12b_qlora_iter4_cw.json \
+    --gpu A100_40

@@ -1,23 +1,32 @@
 #!/bin/bash
 #SBATCH --partition=gpu
+#SBATCH --nodelist=t2n1
 #SBATCH --ntasks=1
 #SBATCH --time=1:30:00
+#SBATCH --job-name=q14b4cw_pre
+#SBATCH --output=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_iter4_cw_pre/logs/pre_%j.log
+#SBATCH --error=/mnt/pool/6/kvturanosov/VKR/finetune_runs/qwen3_14b_iter4_cw_pre/logs/pre_%j.err
 
 set -e
 
 SRC=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation/code
 SRC_TREE=/mnt/pool/6/kvturanosov/VKR/worktrees/re-augmentation
 BASE_RUN_DIR=/mnt/pool/6/kvturanosov/VKR/finetune_runs
-BASE_TMP=/tmp/kvt/${TMP_GROUP:-iter4_cw}
+BASE_TMP=/tmp/kvt/qwen3_14b
+MODEL_DIR=models--Qwen--Qwen3-14B
+MODEL_MARKER=/tmp/kvt/models/.qwen3_14b_copy_complete
 
-if [ -z "$RUN_NAME" ] || [ -z "$MODEL_DIR" ]; then
-    echo "[ERROR] RUN_NAME and MODEL_DIR must be set"
-    exit 1
-fi
+RUNS="
+qwen3_14b_lora_iter4_cw
+qwen3_14b_qlora_iter4_cw
+qwen3_14b_adalora_iter4_cw
+qwen3_14b_tinylora_iter4_cw
+"
 
-MODEL_MARKER=/tmp/kvt/models/.${MODEL_DIR}_copy_complete
-RUN_DIR="$BASE_RUN_DIR/$RUN_NAME"
-TMP="$BASE_TMP/$RUN_NAME/code"
+echo "=== qwen3_14b iter4 cw pre | $(date) ==="
+
+mkdir -p "$BASE_RUN_DIR/qwen3_14b_iter4_cw_pre/logs"
+mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 
 has_complete_model_cache() {
     local ROOT="$1"
@@ -28,11 +37,6 @@ has_complete_model_cache() {
     [ -n "$(find "$SNAPSHOTS" -name tokenizer_config.json -print -quit 2>/dev/null)" ] || return 1
     [ -n "$(find "$SNAPSHOTS" \( -name model.safetensors -o -name model.safetensors.index.json -o -name 'model-*-of-*.safetensors' -o -name pytorch_model.bin \) -print -quit 2>/dev/null)" ] || return 1
 }
-
-echo "=== iter4 cw pre | $RUN_NAME | $(date) ==="
-
-mkdir -p "$RUN_DIR/logs" "$RUN_DIR/results" "$RUN_DIR/Data"
-mkdir -p /tmp/kvt/models /tmp/kvt/hf /tmp/kvt/cache /tmp/kvt/cache/tmp
 
 if [ -f "$MODEL_MARKER" ] && has_complete_model_cache /tmp/kvt/models; then
     echo "$MODEL_DIR already copied"
@@ -54,23 +58,33 @@ else
     date > "$MODEL_MARKER"
 fi
 
-echo "copy code -> $TMP"
-rm -rf "$BASE_TMP/$RUN_NAME"
-mkdir -p "$TMP"
-cp -a "$SRC/." "$TMP/"
+for RUN_NAME in $RUNS; do
+    RUN_DIR="$BASE_RUN_DIR/$RUN_NAME"
+    TMP="$BASE_TMP/$RUN_NAME/code"
 
-rm -rf "$TMP/Data" "$TMP/results" "$TMP/logs"
-mkdir -p "$TMP/Data" "$TMP/results" "$TMP/logs" "$TMP/Data/finetune_checkpoints"
+    echo
+    echo "=== prepare $RUN_NAME ==="
+    mkdir -p "$RUN_DIR/logs" "$RUN_DIR/results" "$RUN_DIR/Data"
 
-if [ -z "$(find "$RUN_DIR/Data" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
-    echo "copy branch Data -> run"
-    cp -a "$SRC/Data/." "$RUN_DIR/Data/"
-fi
+    echo "copy code -> $TMP"
+    rm -rf "$BASE_TMP/$RUN_NAME"
+    mkdir -p "$TMP"
+    cp -a "$SRC/." "$TMP/"
 
-echo "copy run Data -> tmp"
-cp -a "$RUN_DIR/Data/." "$TMP/Data/"
+    rm -rf "$TMP/Data" "$TMP/results" "$TMP/logs"
+    mkdir -p "$TMP/Data" "$TMP/results" "$TMP/logs" "$TMP/Data/finetune_checkpoints"
 
-git -C "$SRC_TREE" rev-parse HEAD > "$TMP/source_commit.txt" 2>/dev/null || true
-ls -lah "$TMP/Data"
+    if [ -z "$(find "$RUN_DIR/Data" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
+        echo "copy branch Data -> run"
+        cp -a "$SRC/Data/." "$RUN_DIR/Data/"
+    fi
 
-echo "iter4 cw pre ready: $RUN_NAME"
+    echo "copy run Data -> tmp"
+    cp -a "$RUN_DIR/Data/." "$TMP/Data/"
+
+    git -C "$SRC_TREE" rev-parse HEAD > "$TMP/source_commit.txt" 2>/dev/null || true
+    ls -lah "$TMP/Data"
+done
+
+echo
+echo "qwen3_14b iter4 cw pre ready"
