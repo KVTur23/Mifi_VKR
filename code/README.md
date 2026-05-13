@@ -38,13 +38,40 @@ Fine-tune использует:
 - test: `Data/data_test.csv`;
 - конфиг эксперимента из `config_models/finetune_configs/`.
 
-Пока запустить два эксперимента.
+Top 10 resuilts
 
 ```bash
-python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_32b_qlora_no_cw.json
 
-python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_32b_qlora_cw.json
+1) ruadapt_qwen3_32b_qlora_iter3
+2) qwen3_14b_lora_iter3
+3) qwen3_14b_qlora_iter3
+4) qlora_t_pro_it_2_1
+5) vikhr_nemo_12b_qlora_iter1
+6) vikhr_nemo_12b_lora_iter3
+7) vistral_24b_qlora_iter1
+8) vistral_24b_adalora_iter1
+9) yandexgpt_5_lite_8b_qlora_iter1
+10) qwen3_32b_qlora_best
 
+python scripts/run_finetune.py  --config config_models/finetune_configs/ruadapt_qwen3_32b_qlora_iter3
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_14b_lora_iter3
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_14b_qlora_iter3
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/qlora_t_pro_it_2_1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/vikhr_nemo_12b_qlora_iter1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/vikhr_nemo_12b_lora_iter3
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/vistral_24b_qlora_iter1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/vistral_24b_adalora_iter1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/yandexgpt_5_lite_8b_qlora_iter1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_32b_qlora_best
 ```
 
 
