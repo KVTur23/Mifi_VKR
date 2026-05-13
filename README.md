@@ -42,6 +42,9 @@ python scripts/augmentation.py
 5) vikhr_nemo_12b_qlora_iter1
 6) vikhr_nemo_12b_lora_iter3
 7) vistral_24b_qlora_iter1
+8) vistral_24b_adalora_iter1
+9) yandexgpt_5_lite_8b_qlora_iter1
+10) qwen3_32b_qlora_best
 
 python scripts/run_finetune.py  --config config_models/finetune_configs/ruadapt_qwen3_32b_qlora_iter3
 
@@ -56,6 +59,12 @@ python scripts/run_finetune.py  --config config_models/finetune_configs/vikhr_ne
 python scripts/run_finetune.py  --config config_models/finetune_configs/vikhr_nemo_12b_lora_iter3
 
 python scripts/run_finetune.py  --config config_models/finetune_configs/vistral_24b_qlora_iter1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/vistral_24b_adalora_iter1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/yandexgpt_5_lite_8b_qlora_iter1
+
+python scripts/run_finetune.py  --config config_models/finetune_configs/qwen3_32b_qlora_best
 ```
 
 
