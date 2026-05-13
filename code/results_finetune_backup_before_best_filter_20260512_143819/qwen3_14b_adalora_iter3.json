@@ -1,0 +1,13 @@
+{
+  "run_key": "qwen3_14b_adalora_iter3",
+  "method": "adalora",
+  "model": "Qwen/Qwen3-14B",
+  "balanced_accuracy": 0.23568324954733688,
+  "macro_f1": 0.22874306512174158,
+  "f1_group_A": 0.48792583557076313,
+  "f1_group_B": 0.2981412052000287,
+  "f1_group_C": 0.08333333333333333,
+  "trainable_params": 96528960,
+  "train_time_sec": 8501.799610853195,
+  "timestamp": "2026-05-11T21:33:45"
+}

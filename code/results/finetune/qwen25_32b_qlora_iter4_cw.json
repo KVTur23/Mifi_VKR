@@ -1,0 +1,13 @@
+{
+  "run_key": "qwen25_32b_qlora_iter4_cw",
+  "method": "qlora",
+  "model": "Qwen/Qwen2.5-32B-Instruct",
+  "balanced_accuracy": 0.5612315631164838,
+  "macro_f1": 0.5231983076912471,
+  "f1_group_A": 0.7253763157143975,
+  "f1_group_B": 0.5352503052503051,
+  "f1_group_C": 0.5888888888888889,
+  "trainable_params": 134402048,
+  "train_time_sec": 17022.660708904266,
+  "timestamp": "2026-05-12T05:04:11"
+}

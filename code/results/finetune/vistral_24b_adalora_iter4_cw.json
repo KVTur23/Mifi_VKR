@@ -1,0 +1,13 @@
+{
+  "run_key": "vistral_24b_adalora_iter4_cw",
+  "method": "adalora",
+  "model": "Vikhrmodels/Vistral-24B-Instruct",
+  "balanced_accuracy": 0.4242343983911444,
+  "macro_f1": 0.39113351501394517,
+  "f1_group_A": 0.6107532546344631,
+  "f1_group_B": 0.4057306622524013,
+  "f1_group_C": 0.45,
+  "trainable_params": 92594560,
+  "train_time_sec": 12808.101964712143,
+  "timestamp": "2026-05-12T11:34:53"
+}
