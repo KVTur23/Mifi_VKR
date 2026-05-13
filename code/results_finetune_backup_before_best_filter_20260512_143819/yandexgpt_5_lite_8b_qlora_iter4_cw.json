@@ -1,0 +1,13 @@
+{
+  "run_key": "yandexgpt_5_lite_8b_qlora_iter4_cw",
+  "method": "qlora",
+  "model": "yandex/YandexGPT-5-Lite-8B-instruct",
+  "balanced_accuracy": 0.48572345864012534,
+  "macro_f1": 0.4720608104538363,
+  "f1_group_A": 0.7218021471110303,
+  "f1_group_B": 0.5406349206349206,
+  "f1_group_C": 0.4305555555555555,
+  "trainable_params": 42090496,
+  "train_time_sec": 4559.506331682205,
+  "timestamp": "2026-05-12T09:14:39"
+}

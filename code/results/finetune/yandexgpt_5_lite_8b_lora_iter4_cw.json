@@ -1,0 +1,13 @@
+{
+  "run_key": "yandexgpt_5_lite_8b_lora_iter4_cw",
+  "method": "lora",
+  "model": "yandex/YandexGPT-5-Lite-8B-instruct",
+  "balanced_accuracy": 0.5467347375581503,
+  "macro_f1": 0.5160443531491271,
+  "f1_group_A": 0.7842730178824898,
+  "f1_group_B": 0.5973483923483923,
+  "f1_group_C": 0.4583333333333333,
+  "trainable_params": 42090496,
+  "train_time_sec": 4113.036165475845,
+  "timestamp": "2026-05-12T09:08:38"
+}

@@ -1,0 +1,13 @@
+{
+  "run_key": "qlora_t_pro_it_2_1",
+  "method": "qlora",
+  "model": "t-tech/T-pro-it-2.1",
+  "balanced_accuracy": 0.5299078621995289,
+  "macro_f1": 0.5295149924286858,
+  "f1_group_A": 0.7305604420726193,
+  "f1_group_B": 0.466099086099086,
+  "f1_group_C": 0.5972222222222222,
+  "trainable_params": 268619776,
+  "train_time_sec": 11124.30968093872,
+  "timestamp": "2026-04-24T02:22:44"
+}

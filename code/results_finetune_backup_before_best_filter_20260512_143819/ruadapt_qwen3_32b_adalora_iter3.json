@@ -1,0 +1,13 @@
+{
+  "run_key": "ruadapt_qwen3_32b_adalora_iter3",
+  "method": "adalora",
+  "model": "RefalMachine/RuadaptQwen3-32B-Instruct",
+  "balanced_accuracy": 0.45106456502785863,
+  "macro_f1": 0.4023269651364152,
+  "f1_group_A": 0.6845911319669303,
+  "f1_group_B": 0.40714285714285714,
+  "f1_group_C": 0.45,
+  "trainable_params": 268634112,
+  "train_time_sec": 16950.48385667801,
+  "timestamp": "2026-05-11T19:17:11"
+}

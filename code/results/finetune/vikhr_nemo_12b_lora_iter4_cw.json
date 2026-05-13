@@ -1,0 +1,13 @@
+{
+  "run_key": "vikhr_nemo_12b_lora_iter4_cw",
+  "method": "lora",
+  "model": "Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24",
+  "balanced_accuracy": 0.5290982221041746,
+  "macro_f1": 0.4821028463657254,
+  "f1_group_A": 0.7306635213136397,
+  "f1_group_B": 0.530079365079365,
+  "f1_group_C": 0.5138888888888888,
+  "trainable_params": 114216960,
+  "train_time_sec": 6323.525787830353,
+  "timestamp": "2026-05-12T10:43:29"
+}

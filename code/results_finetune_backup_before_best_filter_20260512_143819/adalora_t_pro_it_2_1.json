@@ -1,0 +1,13 @@
+{
+  "run_key": "adalora_t_pro_it_2_1",
+  "method": "adalora",
+  "model": "t-tech/T-pro-it-2.1",
+  "balanced_accuracy": 0.4489229474596538,
+  "macro_f1": 0.4166751408368647,
+  "f1_group_A": 0.640832843532856,
+  "f1_group_B": 0.5254593554593554,
+  "f1_group_C": 0.3472222222222221,
+  "trainable_params": 134409216,
+  "train_time_sec": 12266.63795876503,
+  "timestamp": "2026-04-24T02:41:04"
+}

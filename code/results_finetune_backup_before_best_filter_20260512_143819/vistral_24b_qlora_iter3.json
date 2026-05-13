@@ -1,0 +1,13 @@
+{
+  "run_key": "vistral_24b_qlora_iter3",
+  "method": "qlora",
+  "model": "Vikhrmodels/Vistral-24B-Instruct",
+  "balanced_accuracy": 0.531347161803511,
+  "macro_f1": 0.5236445032901894,
+  "f1_group_A": 0.7558636182544973,
+  "f1_group_B": 0.46793650793650793,
+  "f1_group_C": 0.5972222222222222,
+  "trainable_params": 184995840,
+  "train_time_sec": 11695.670911312103,
+  "timestamp": "2026-05-11T17:47:47"
+}

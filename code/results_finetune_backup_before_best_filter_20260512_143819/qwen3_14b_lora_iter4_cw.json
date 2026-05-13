@@ -1,0 +1,13 @@
+{
+  "run_key": "qwen3_14b_lora_iter4_cw",
+  "method": "lora",
+  "model": "Qwen/Qwen3-14B",
+  "balanced_accuracy": 0.5365131350498414,
+  "macro_f1": 0.49928888081104156,
+  "f1_group_A": 0.7567798357536701,
+  "f1_group_B": 0.5174074074074074,
+  "f1_group_C": 0.5333333333333333,
+  "trainable_params": 64409600,
+  "train_time_sec": 7473.481047868729,
+  "timestamp": "2026-05-12T02:24:29"
+}
