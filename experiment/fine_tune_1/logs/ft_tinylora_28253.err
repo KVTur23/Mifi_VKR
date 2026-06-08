@@ -1,0 +1,154 @@
+Traceback (most recent call last):
+  File "/tmp/kvt/code/src/finetune/orchestrator.py", line 177, in run_finetune
+    mod.run(config_path=str(config_path), pipeline_cfg=pipeline_cfg)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/kvt/code/src/finetune/run_tinylora.py", line 25, in run
+    return runner.run()
+           ~~~~~~~~~~^^
+  File "/tmp/kvt/code/src/finetune/trainer_base.py", line 193, in run
+    self.prepare()
+    ~~~~~~~~~~~~^^
+  File "/tmp/kvt/code/src/finetune/trainer_base.py", line 100, in prepare
+    self.model, self.tokenizer = load_base_model(
+                                 ~~~~~~~~~~~~~~~^
+        self.cfg, self.pipeline_cfg,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        label2id=self.label2id,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/tmp/kvt/code/src/finetune/peft_utils.py", line 25, in load_base_model
+    import torch
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/__init__.py", line 2324, in <module>
+    from torch import quantization as quantization  # usort: skip
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/quantization/__init__.py", line 2, in <module>
+    from .fake_quantize import *  # noqa: F403
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/quantization/fake_quantize.py", line 10, in <module>
+    from torch.ao.quantization.fake_quantize import (
+    ...<21 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/__init__.py", line 14, in <module>
+    from .pt2e._numeric_debugger import (  # noqa: F401
+    ...<6 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/pt2e/_numeric_debugger.py", line 8, in <module>
+    from torch.ao.quantization.pt2e.graph_utils import bfs_trace_with_node_process
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/pt2e/graph_utils.py", line 9, in <module>
+    from torch.export import ExportedProgram
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/__init__.py", line 42, in <module>
+    from .decomp_utils import CustomDecompTable
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/decomp_utils.py", line 5, in <module>
+    from torch._export.utils import (
+    ...<4 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_export/__init__.py", line 49, in <module>
+    from .wrappers import _wrap_submodules
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_export/wrappers.py", line 10, in <module>
+    from torch._higher_order_ops.flat_apply import (
+    ...<3 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_higher_order_ops/__init__.py", line 36, in <module>
+    from torch._higher_order_ops.wrap import (
+    ...<6 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_higher_order_ops/wrap.py", line 16, in <module>
+    from torch.utils._debug_mode import DebugMode
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/utils/_debug_mode.py", line 660, in <module>
+    @torch.library.custom_op("debug_mode_ops::annotate", mutates_args=())
+     ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_library/custom_ops.py", line 157, in inner
+    result = CustomOpDef(namespace, opname, schema_str, fn, tags)
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_library/custom_ops.py", line 215, in __init__
+    self._register_to_dispatcher(self._tags)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_library/custom_ops.py", line 638, in _register_to_dispatcher
+    lib._register_fake(self._name, fake_impl, _stacklevel=4)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/library.py", line 184, in _register_fake
+    caller_module = inspect.getmodule(frame)
+  File "/usr/lib/python3.13/inspect.py", line 1026, in getmodule
+    f = getabsfile(module)
+  File "/usr/lib/python3.13/inspect.py", line 995, in getabsfile
+    return os.path.normcase(os.path.abspath(_filename))
+                            ~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "<frozen posixpath>", line 384, in abspath
+FileNotFoundError: [Errno 2] No such file or directory
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/tmp/kvt/code/src/finetune/orchestrator.py", line 182, in run_finetune
+    import torch
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/__init__.py", line 2324, in <module>
+    from torch import quantization as quantization  # usort: skip
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/quantization/__init__.py", line 6, in <module>
+    from .qconfig import *  # noqa: F403
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/quantization/qconfig.py", line 10, in <module>
+    from torch.ao.quantization.qconfig import (
+    ...<20 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/__init__.py", line 14, in <module>
+    from .pt2e._numeric_debugger import (  # noqa: F401
+    ...<6 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/pt2e/_numeric_debugger.py", line 8, in <module>
+    from torch.ao.quantization.pt2e.graph_utils import bfs_trace_with_node_process
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/pt2e/graph_utils.py", line 9, in <module>
+    from torch.export import ExportedProgram
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/__init__.py", line 43, in <module>
+    from .dynamic_shapes import AdditionalInputs, Constraint, Dim, dims, ShapesCollection
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/dynamic_shapes.py", line 27, in <module>
+    from .exported_program import ExportedProgram
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/exported_program.py", line 60, in <module>
+    from torch._export.verifier import Verifier
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_export/verifier.py", line 36, in <module>
+    def _check_has_fake_tensor(node: torch.fx.Node) -> None:
+                                     ^^^^^^^^
+AttributeError: partially initialized module 'torch' from '/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/__init__.py' has no attribute 'fx' (most likely due to a circular import)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/tmp/kvt/code/scripts/run_finetune.py", line 51, in <module>
+    main()
+    ~~~~^^
+  File "/tmp/kvt/code/scripts/run_finetune.py", line 44, in main
+    df = run_finetune(methods=args.methods, gpu=args.gpu, force=args.force)
+  File "/tmp/kvt/code/src/finetune/orchestrator.py", line 191, in run_finetune
+    _gpu_cleanup()
+    ~~~~~~~~~~~~^^
+  File "/tmp/kvt/code/src/finetune/orchestrator.py", line 66, in _gpu_cleanup
+    import torch
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/__init__.py", line 2324, in <module>
+    from torch import quantization as quantization  # usort: skip
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/quantization/__init__.py", line 6, in <module>
+    from .qconfig import *  # noqa: F403
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/quantization/qconfig.py", line 10, in <module>
+    from torch.ao.quantization.qconfig import (
+    ...<20 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/__init__.py", line 14, in <module>
+    from .pt2e._numeric_debugger import (  # noqa: F401
+    ...<6 lines>...
+    )
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/pt2e/_numeric_debugger.py", line 8, in <module>
+    from torch.ao.quantization.pt2e.graph_utils import bfs_trace_with_node_process
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/ao/quantization/pt2e/graph_utils.py", line 9, in <module>
+    from torch.export import ExportedProgram
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/__init__.py", line 43, in <module>
+    from .dynamic_shapes import AdditionalInputs, Constraint, Dim, dims, ShapesCollection
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/dynamic_shapes.py", line 27, in <module>
+    from .exported_program import ExportedProgram
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/export/exported_program.py", line 60, in <module>
+    from torch._export.verifier import Verifier
+  File "/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/_export/verifier.py", line 36, in <module>
+    def _check_has_fake_tensor(node: torch.fx.Node) -> None:
+                                     ^^^^^^^^
+AttributeError: partially initialized module 'torch' from '/mnt/pool/6/kvturanosov/VKR/venv/lib/python3.13/site-packages/torch/__init__.py' has no attribute 'fx' (most likely due to a circular import)

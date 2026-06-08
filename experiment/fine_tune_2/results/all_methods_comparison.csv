@@ -1,0 +1,5 @@
+method,model,setting,balanced_accuracy,macro_f1,unknown_rate
+finetune,t-tech/T-pro-it-2.1,qlora,0.4334181929916056,0.419520327351521,0.0
+finetune,Qwen/Qwen3-32B,qlora,0.4832490435417022,0.4554948710335352,0.0
+finetune,t-tech/T-pro-it-2.1,adalora,0.3951795577291608,0.3476476600284044,0.0
+finetune,Qwen/Qwen3-32B,adalora,0.3622436838954696,0.3404830010222167,0.0

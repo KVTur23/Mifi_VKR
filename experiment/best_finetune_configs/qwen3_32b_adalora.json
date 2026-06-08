@@ -1,0 +1,56 @@
+{
+  "_comment_source": "R1 (2026-04-22): bal_acc=0.4940, macro_f1=0.4783, f1_C=0.45",
+  "_comment_vs_r3": "R3 init_r=16 → 0.4049. Для Qwen3-32B AdaLoRA меньшие ранги стабильнее",
+
+  "model_name": "Qwen/Qwen3-32B",
+  "method": "adalora",
+  "task_type": "SEQ_CLS",
+  "num_labels": 36,
+  "max_seq_length": 2048,
+
+  "peft_config": {
+    "init_r": 12,
+    "target_r": 8,
+    "beta1": 0.85,
+    "beta2": 0.85,
+    "tinit": 50,
+    "tfinal": 200,
+    "deltaT": 10,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj",
+                       "gate_proj", "up_proj", "down_proj"],
+    "modules_to_save": ["score"],
+    "total_step": null
+  },
+
+  "quantization": {
+    "load_in_4bit": true,
+    "bnb_4bit_quant_type": "nf4",
+    "bnb_4bit_compute_dtype": "bfloat16",
+    "bnb_4bit_use_double_quant": true
+  },
+
+  "training_params": {
+    "num_train_epochs": 6,
+    "per_device_train_batch_size": 2,
+    "per_device_eval_batch_size": 4,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 5e-4,
+    "lr_scheduler_type": "cosine",
+    "warmup_ratio": 0.03,
+    "weight_decay": 0.01,
+    "optim": "adamw_torch",
+    "gradient_checkpointing": true,
+    "max_grad_norm": 1.0,
+    "logging_steps": 10,
+    "save_strategy": "epoch",
+    "eval_strategy": "epoch",
+    "load_best_model_at_end": true,
+    "metric_for_best_model": "macro_f1",
+    "greater_is_better": true,
+    "save_total_limit": 2,
+    "bf16": true,
+    "seed": 42
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "run_key": "vikhr_nemo_12b_tinylora_iter4_cw",
+  "method": "tinylora",
+  "model": "Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24",
+  "balanced_accuracy": 0.450032974264125,
+  "macro_f1": 0.4308005905940507,
+  "f1_group_A": 0.5955516838625178,
+  "f1_group_B": 0.4425466690172573,
+  "f1_group_C": 0.5138888888888888,
+  "trainable_params": 194560,
+  "train_time_sec": 4460.928250551224,
+  "timestamp": "2026-05-12T10:58:30"
+}

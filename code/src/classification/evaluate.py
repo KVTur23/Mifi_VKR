@@ -88,3 +88,92 @@ def evaluate_model(
     print(f"\n{classification_report(y_test, y_pred, target_names=label_names, zero_division=0)}")
 
     return {"name": name, "balanced_accuracy": bal_acc, "macro_f1": f1_mac}
+
+
+# ============================================================
+# Этап 4: Оценка prompt-based классификации
+# ============================================================
+
+def evaluate_prompt_classification(
+    df_results: "pd.DataFrame",
+    groups: dict[str, str] | None = None,
+) -> dict:
+    """
+    Оценивает результаты prompt-based классификации.
+
+    Аргументы:
+        df_results: DataFrame с колонками true_label, predicted_label, skipped
+        groups:     словарь {class_name: "A"|"B"|"C"} для per-group метрик
+
+    Возвращает dict:
+        balanced_accuracy, macro_f1, unknown_rate,
+        f1_group_A, f1_group_B, f1_group_C, n_test, n_skipped,
+        classification_report (str)
+    """
+    import pandas as pd
+
+    # Фильтруем skipped (промпт не влез в контекст)
+    n_total = len(df_results)
+    n_skipped = int(df_results["skipped"].sum())
+
+    # Работаем только с не-skipped
+    df = df_results[~df_results["skipped"]].copy()
+
+    y_true = df["true_label"].tolist()
+    y_pred = df["predicted_label"].tolist()
+
+    # Все уникальные лейблы (из true, чтобы не потерять классы)
+    all_labels = sorted(set(y_true))
+
+    # Основные метрики
+    bal_acc = balanced_accuracy_score(y_true, y_pred)
+    f1_mac = f1_score(y_true, y_pred, average="macro", zero_division=0, labels=all_labels)
+
+    # Unknown rate
+    n_unknown = sum(1 for p in y_pred if p == "unknown")
+    unknown_rate = n_unknown / len(y_pred) if y_pred else 0.0
+
+    report = classification_report(
+        y_true, y_pred, labels=all_labels, zero_division=0,
+    )
+
+    result = {
+        "balanced_accuracy": bal_acc,
+        "macro_f1": f1_mac,
+        "unknown_rate": unknown_rate,
+        "n_test": n_total,
+        "n_skipped": n_skipped,
+        "classification_report": report,
+    }
+
+    # Per-group метрики
+    if groups:
+        for group_name in ("A", "B", "C"):
+            group_classes = [c for c, g in groups.items() if g == group_name]
+            mask = df["true_label"].isin(group_classes)
+            if mask.sum() > 0:
+                df_g = df[mask]
+                g_labels = sorted(set(df_g["true_label"]))
+                f1_g = f1_score(
+                    df_g["true_label"], df_g["predicted_label"],
+                    average="macro", zero_division=0, labels=g_labels,
+                )
+            else:
+                f1_g = 0.0
+            result[f"f1_group_{group_name}"] = f1_g
+
+    # Печать
+    print("=" * 60)
+    print("PROMPT-BASED КЛАССИФИКАЦИЯ")
+    print("=" * 60)
+    print(f"  Balanced Accuracy: {bal_acc:.4f}")
+    print(f"  Macro F1:          {f1_mac:.4f}")
+    print(f"  Unknown rate:      {unknown_rate:.4f} ({n_unknown}/{len(y_pred)})")
+    print(f"  Skipped:           {n_skipped}/{n_total}")
+    if groups:
+        print(f"  F1 Group A:        {result.get('f1_group_A', 0):.4f}")
+        print(f"  F1 Group B:        {result.get('f1_group_B', 0):.4f}")
+        print(f"  F1 Group C:        {result.get('f1_group_C', 0):.4f}")
+    print(f"\n{report}")
+
+    return result

@@ -1,7 +1,7 @@
 """
-stage2_paraphrase.py — Этап 2: парафраз текстов через LLM (батчевый режим)
+stage2_paraphrase.py - Этап 2: парафраз текстов через LLM (батчевый режим)
 
-Берём классы с 15–34 примерами и доводим до 35 через перефразирование.
+Берём классы с 15-34 примерами и доводим до 35 через перефразирование.
 Для каждого текста берём оригинал и просим LLM переписать его другими словами.
 
 Генерация батчами через vLLM, потом валидация + LLM-судья.
@@ -16,6 +16,7 @@ stage2_paraphrase.py — Этап 2: парафраз текстов через 
 import sys
 import random
 import argparse
+import copy
 from pathlib import Path
 
 import pandas as pd
@@ -32,7 +33,9 @@ from src.augmentation.llm_utils import (
     load_llm, generate_batch,
     load_prompt_template, select_top_paraphrases,
 )
-from src.augmentation.validation import validate_generated_texts
+from src.augmentation.validation import (
+    SIMILARITY_THRESHOLD, SIMILARITY_THRESHOLD_LOW, validate_generated_texts,
+)
 from src.utils.config_loader import load_model_config
 
 
@@ -43,6 +46,29 @@ TARGET_COUNT = 35
 MAX_RETRIES = 5
 OVERSAMPLE_FACTOR = 5
 PARAPHRASE_PROMPT = "paraphrase.txt"
+
+# Если источников мало - модель быстро упирается в "почти копии",
+# поэтому при таком случае поднимаем температуру для большего разнообразия
+SMALL_CLASS_SOURCE_THRESHOLD = 6
+SMALL_CLASS_TEMPERATURE = 0.9
+
+# Прогрессивный порог косинусного сходства: первые попытки строгие,
+# дальше каждую попытку постепенно ослабляем - чтобы не застрять на
+# упёртых классах, где модель крутится вокруг одних формулировок
+SIM_THRESHOLD_BASE = SIMILARITY_THRESHOLD
+SIM_THRESHOLD_MAX = SIMILARITY_THRESHOLD_LOW
+SIM_INCREASE_AFTER_ATTEMPT = 2
+SIM_STEP = 0.01
+
+
+def _sampling_for_source_count(sampling_params, source_count: int):
+    """Если источников мало - поднимаем температуру для разнообразия."""
+    params = copy.copy(sampling_params)
+    if source_count <= SMALL_CLASS_SOURCE_THRESHOLD:
+        params.temperature = SMALL_CLASS_TEMPERATURE
+        print(f"  Малое число источников ({source_count}) - "
+              f"повышаю температуру парафраза до {params.temperature:.2f}")
+    return params
 
 
 def build_paraphrase_prompt(template: str, original_text: str, class_name: str) -> str:
@@ -60,17 +86,24 @@ def augment_class(
     llm,
     sampling_params,
     prompt_template: str,
+    paraphrase_sources: list[str],
     system_prompt: str | None = None,
     n_original: int | None = None,
 ) -> list[str]:
     """
     Генерирует парафразы для одного класса батчами.
 
-    Схема: берём оригиналы по кругу → генерируем 3x с запасом →
-    валидация → LLM-судья → берём лучшие. Повторяем если мало.
+    Схема: берём оригиналы по кругу -> генерируем с запасом -> валидация ->
+    отбор -> повторяем пока не наберём n_needed (до MAX_RETRIES попыток).
+
+    Параметры:
+        existing_texts:     все тексты класса в текущем df (для дедупликации/валидации)
+        paraphrase_sources: оригиналы из train_after_eda.csv для перефразирования.
+
     """
     all_valid_texts = []
     current_existing = list(existing_texts)
+    class_sampling_params = _sampling_for_source_count(sampling_params, len(paraphrase_sources))
 
     for attempt in range(1, MAX_RETRIES + 1):
         still_needed = n_needed - len(all_valid_texts)
@@ -81,8 +114,8 @@ def augment_class(
         print(f"  [Раунд {attempt}/{MAX_RETRIES}] Нужно ещё {still_needed}, "
               f"генерируем батч из {batch_size} парафразов")
 
-        # выбираем оригиналы равномерно по кругу — что бы не перефразировать один и тот же 10 раз
-        sources = _select_sources(existing_texts, batch_size)
+        # выбираем оригиналы равномерно по кругу - чтобы не перефразировать один и тот же 10 раз
+        sources = _select_sources(paraphrase_sources, batch_size)
 
         # собираем промпты
         prompts = [
@@ -91,14 +124,10 @@ def augment_class(
         ]
 
         # всё на GPU одним батчем
-        raw_outputs = generate_batch(llm, sampling_params, prompts, system_prompt=system_prompt)
+        raw_outputs = generate_batch(llm, class_sampling_params, prompts, system_prompt=system_prompt)
 
-        # убираем пустые, но сохраняем связь парафраз → оригинал
-        pairs = [
-            (text, source)
-            for text, source in zip(raw_outputs, sources)
-            if text
-        ]
+        # Исключаем пустые тексты
+        pairs = [ (text, source) for text, source in zip(raw_outputs, sources) if text]
 
         print(f"  [Раунд {attempt}] Получено {len(pairs)} парафразов")
 
@@ -108,19 +137,21 @@ def augment_class(
         paraphrased = [p[0] for p in pairs]
         their_originals = [p[1] for p in pairs]
 
-        # прогрессивный порог сходства: первые 2 попытки строгий (0.95),
-        # потом каждую попытку +0.01, максимум 0.98
-        sim_threshold = min(0.95 + max(0, attempt - 2) * 0.01, 0.98)
+        # Первые SIM_INCREASE_AFTER_ATTEMPT попыток держим строгий порог сходства,
+        # дальше каждую попытку послабляем на SIM_STEP - чтобы не застрять навсегда
+        # на упёртых классах, где модель крутится вокруг одних формулировок
+        relax_steps = max(0, attempt - SIM_INCREASE_AFTER_ATTEMPT)
+        sim_threshold = min(SIM_THRESHOLD_BASE + relax_steps * SIM_STEP, SIM_THRESHOLD_MAX)
 
-        # фильтры: дубликаты, длина, язык, сходство
-        # n_original прокидываем — для маленьких классов (1 оригинал) порог мягче (0.98)
+        # Фильтры: дубликаты, длина, язык, сходство
+        # n_original прокидываем - для маленьких классов (1 оригинал) порог мягче
         valid = validate_generated_texts(
             paraphrased, current_existing, class_name,
             similarity_threshold=sim_threshold, n_original=n_original,
         )
         n_after_validation = len(valid)
 
-        # восстанавливаем связь — какой оригинал у каждого прошедшего фильтры
+        # восстанавливаем связь - какой оригинал у каждого прошедшего фильтры
         valid_set = set(valid)
         valid_with_originals = [
             (para, orig)
@@ -180,18 +211,42 @@ def _select_sources(existing_texts: list[str], n_needed: int) -> list[str]:
 def run(config_path: str, pipeline_cfg=None) -> None:
     """Основная функция этапа 2."""
     global TARGET_COUNT, MAX_RETRIES, OVERSAMPLE_FACTOR
+    global SMALL_CLASS_SOURCE_THRESHOLD, SMALL_CLASS_TEMPERATURE
+    global SIM_THRESHOLD_BASE, SIM_THRESHOLD_MAX, SIM_INCREASE_AFTER_ATTEMPT, SIM_STEP
 
+    # Если передан pipeline_config - переопределяем глобалы значениями из JSON,
+    # иначе остаются дефолты из шапки модуля
     if pipeline_cfg is not None:
         s = pipeline_cfg.stage2
         TARGET_COUNT = s.target_count
         MAX_RETRIES = s.max_retries
         OVERSAMPLE_FACTOR = s.oversample_factor
+        # _DotDict наследует dict - используем .get() с default
+        SMALL_CLASS_SOURCE_THRESHOLD = int(
+            s.get("small_class_source_threshold", SMALL_CLASS_SOURCE_THRESHOLD)
+        )
+        SMALL_CLASS_TEMPERATURE = float(
+            s.get("small_class_temperature", SMALL_CLASS_TEMPERATURE)
+        )
+        SIM_INCREASE_AFTER_ATTEMPT = int(
+            s.get("similarity_increase_after_attempt", SIM_INCREASE_AFTER_ATTEMPT)
+        )
+        SIM_STEP = float(s.get("similarity_step", SIM_STEP))
+        # Базовые пороги живут в общей секции validation - те же значения нужны и stage1
+        v = pipeline_cfg.validation
+        SIM_THRESHOLD_BASE = float(v.get("similarity_threshold", SIM_THRESHOLD_BASE))
+        SIM_THRESHOLD_MAX = float(v.get("similarity_threshold_max", SIM_THRESHOLD_MAX))
 
+    # Фиксируем сиды - иначе пары промптов будут в разном порядке
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     print("=" * 60)
-    print(f"ЭТАП 2: Парафраз через LLM (< {TARGET_COUNT} → {TARGET_COUNT})")
+    print(f"ЭТАП 2: Парафраз через LLM (< {TARGET_COUNT} -> {TARGET_COUNT})")
+    print(f"       источник парафраза: ТОЛЬКО ОРИГИНАЛЫ (train_after_eda.csv)")
+    print(f"       oversample={OVERSAMPLE_FACTOR}×, max_retries={MAX_RETRIES}, "
+          f"sim {SIM_THRESHOLD_BASE:.2f}->{SIM_THRESHOLD_MAX:.2f} "
+          f"(+{SIM_STEP} после {SIM_INCREASE_AFTER_ATTEMPT}-й попытки)")
     print("=" * 60)
 
     df = load_dataset(stage=STAGE)
@@ -199,13 +254,13 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     classes_to_augment = get_classes_to_augment(df, min_count=0, max_count=TARGET_COUNT)
 
     if not classes_to_augment:
-        print("[Этап 2] Все классы уже имеют >= 35 примеров, этап пропущен")
-        save_checkpoint(df, stage=STAGE)
+        # Нечего догонять - выходим, файл уже на месте, переписывать не надо
+        print(f"[Этап 2] Все классы уже имеют >= {TARGET_COUNT} примеров, этап пропущен")
         return
 
     print(f"\n[Этап 2] Классов для аугментации: {len(classes_to_augment)}")
     for name, count in sorted(classes_to_augment.items(), key=lambda x: x[1]):
-        print(f"  «{name}»: {count} → нужно ещё {TARGET_COUNT - count}")
+        print(f"  «{name}»: {count} -> нужно ещё {TARGET_COUNT - count}")
 
     # грузим LLM и конфиг
     llm, sampling_params, _ = load_llm(config_path, pipeline_cfg=pipeline_cfg)
@@ -216,7 +271,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
     system_prompt = config.get("paraphrase_system_prompt")
     prompt_template = load_prompt_template(paraphrase_template_name)
 
-    # загружаем исходный датасет (до аугментации) — что бы знать реальное число оригиналов
+    # загружаем исходный датасет (до аугментации) - чтобы знать реальное число оригиналов
     # после stage1 у класса может быть 15 текстов, но реально оригиналов было 1-5
     # это влияет на порог косинусного сходства в валидации
     df_original = load_dataset(stage=0)
@@ -229,8 +284,19 @@ def run(config_path: str, pipeline_cfg=None) -> None:
         existing_texts = df[df[LABEL_COL] == class_name][TEXT_COL].tolist()
         real_original_count = original_counts.get(class_name, current_count)
 
+        # Источник для парафраза - только оригиналы из train_after_eda.csv.
+        paraphrase_sources = df_original[
+            df_original[LABEL_COL] == class_name
+        ][TEXT_COL].tolist()
+        if not paraphrase_sources:
+            # Не должно случаться после EDA - но если случилось, пропускаем класс,
+            print(f"  [Пропуск] Нет оригиналов для «{class_name}» в train_after_eda.csv")
+            continue
+
         print(f"\n[Этап 2] Класс «{class_name}»: есть {current_count} "
-              f"(из них {real_original_count} оригиналов), нужно ещё {n_needed}")
+              f"(из них {real_original_count} оригиналов), "
+              f"источников парафраза: {len(paraphrase_sources)}, "
+              f"нужно ещё {n_needed}")
 
         try:
             generated = augment_class(
@@ -242,6 +308,7 @@ def run(config_path: str, pipeline_cfg=None) -> None:
                 prompt_template=prompt_template,
                 system_prompt=system_prompt,
                 n_original=real_original_count,
+                paraphrase_sources=paraphrase_sources,
             )
         except Exception as e:
             print(f"[Этап 2] Ошибка при обработке класса «{class_name}»: {e}")
@@ -253,16 +320,18 @@ def run(config_path: str, pipeline_cfg=None) -> None:
 
         print(f"[Этап 2] Класс «{class_name}»: добавлено {len(generated)} парафразов")
 
-        # сохраняем после каждого класса — страховка
-        if new_rows:
+        # Промежуточный чекпоинт после каждого класса - страховка от падения
+        # Colab/SLURM: восстановим уже сделанное вместо повторной генерации.
+        # На последнем классе пропускаем - финальный save ниже сделает то же самое
+        is_last_class = class_idx == len(classes_to_augment) - 1
+        if new_rows and not is_last_class:
             df_tmp = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
             save_checkpoint(df_tmp, stage=STAGE)
             print(f"[Этап 2] Промежуточное сохранение: "
                   f"{class_idx + 1} классов обработано, {len(df_tmp)} записей")
 
     if new_rows:
-        new_df = pd.DataFrame(new_rows)
-        df = pd.concat([df, new_df], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
         print(f"\n[Этап 2] Всего добавлено {len(new_rows)} текстов")
     else:
         print("\n[Этап 2] Новых текстов не сгенерировано")

@@ -40,7 +40,7 @@ def load_llm(config_path: str, pipeline_cfg=None) -> tuple:
 
     print(f"[LLM] Загружаю модель через vLLM: {model_name}")
 
-    # если в названии модели есть "awq" — vllm автоматом ставит квантизацию
+    # если в названии модели есть "awq" — vllm автоматом распаковывает квантизованные веса
     quantization = config.get("quantization", "awq" if "awq" in model_name.lower() else None)
 
     llm = LLM(
@@ -289,13 +289,13 @@ def select_top_paraphrases(
 
 
 def _parse_score(raw: str | None) -> float:
-    """Вытаскивает число 1-10 из ответа LLM. Если не распарсилось — ставит 5."""
+    """Вытаскивает число 1-10 из ответа LLM. Если не распарсилось — ставит 0."""
     if not raw:
-        return 5.0
+        return 0
     match = re.search(r"\b(10|[1-9])\b", raw.strip())
     if match:
         return float(match.group(1))
-    return 5.0
+    return 0
 
 
 def load_prompt_template(template_name: str) -> str:

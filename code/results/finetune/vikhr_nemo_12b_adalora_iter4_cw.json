@@ -1,0 +1,13 @@
+{
+  "run_key": "vikhr_nemo_12b_adalora_iter4_cw",
+  "method": "adalora",
+  "model": "Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24",
+  "balanced_accuracy": 0.40012055753623216,
+  "macro_f1": 0.38192311762378867,
+  "f1_group_A": 0.6704454940000504,
+  "f1_group_B": 0.3467101514469936,
+  "f1_group_C": 0.375,
+  "trainable_params": 57205120,
+  "train_time_sec": 7179.347079753876,
+  "timestamp": "2026-05-12T11:17:43"
+}

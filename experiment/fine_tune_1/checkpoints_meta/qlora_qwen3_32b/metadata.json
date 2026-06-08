@@ -1,0 +1,7 @@
+{
+  "method": "qlora",
+  "model_name": "Qwen/Qwen3-32B",
+  "run_key": "qlora_qwen3_32b",
+  "trainable_params": 134402048,
+  "train_time_sec": 16922.243359088898
+}

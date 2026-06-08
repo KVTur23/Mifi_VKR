@@ -1,0 +1,13 @@
+{
+  "run_key": "vikhr_nemo_12b_qlora_iter1",
+  "method": "qlora",
+  "model": "Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24",
+  "balanced_accuracy": 0.5582951238209176,
+  "macro_f1": 0.5247766782863319,
+  "f1_group_A": 0.7106691309091105,
+  "f1_group_B": 0.5603559403559404,
+  "f1_group_C": 0.5888888888888889,
+  "trainable_params": 57200640,
+  "train_time_sec": 7826.343893766403,
+  "timestamp": "2026-05-10T13:21:39"
+}

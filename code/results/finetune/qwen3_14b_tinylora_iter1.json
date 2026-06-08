@@ -1,0 +1,13 @@
+{
+  "run_key": "qwen3_14b_tinylora_iter1",
+  "method": "tinylora",
+  "model": "Qwen/Qwen3-14B",
+  "balanced_accuracy": 0.43950741626832895,
+  "macro_f1": 0.43186768574562673,
+  "f1_group_A": 0.6654560376191753,
+  "f1_group_B": 0.4196176143544565,
+  "f1_group_C": 0.45,
+  "trainable_params": 194560,
+  "train_time_sec": 5912.912348270416,
+  "timestamp": "2026-05-10T06:20:48"
+}

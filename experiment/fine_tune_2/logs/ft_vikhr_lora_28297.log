@@ -1,0 +1,112 @@
+=== SLURM 28297 | host=t2n1 | Thu Apr 23 03:35:10 PM MSK 2026 ===
+Thu Apr 23 15:35:10 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.163.01             Driver Version: 550.163.01     CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          Off |   00000000:C1:00.0 Off |                    0 |
+| N/A   22C    P0             32W /  250W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[Orchestrator] GPU профиль: A100_40
+[Orchestrator] Методы: ['lora_vikhr_nemo_12b']
+[Orchestrator] force=False, уже готово: —
+
+############################################################
+# lora_vikhr_nemo_12b  (run_key=lora_vikhr_nemo_12b_instruct_r_21_09_24)
+############################################################
+[Данные] Найден чекпоинт этапа 3: data_after_stage3.csv (2335 записей)
+[Данные] Тестовая выборка: data_test.csv (341 записей)
+[Данные] Найден чекпоинт этапа 0: train_after_eda.csv (1409 записей)
+trainable params: 57,200,640 || all params: 11,634,088,960 || trainable%: 0.4917
+{'loss': '208.8', 'grad_norm': '3353', 'learning_rate': '1.023e-05', 'epoch': '0.06849'}
+{'loss': '164.2', 'grad_norm': '1716', 'learning_rate': '2.159e-05', 'epoch': '0.137'}
+{'loss': '106.1', 'grad_norm': '1359', 'learning_rate': '3.295e-05', 'epoch': '0.2055'}
+{'loss': '73.92', 'grad_norm': '1224', 'learning_rate': '4.432e-05', 'epoch': '0.274'}
+{'loss': '58.77', 'grad_norm': '1225', 'learning_rate': '4.999e-05', 'epoch': '0.3425'}
+{'loss': '43.01', 'grad_norm': '1244', 'learning_rate': '4.994e-05', 'epoch': '0.411'}
+{'loss': '46.68', 'grad_norm': '1726', 'learning_rate': '4.984e-05', 'epoch': '0.4795'}
+{'loss': '39.05', 'grad_norm': '993.2', 'learning_rate': '4.968e-05', 'epoch': '0.5479'}
+{'loss': '33.57', 'grad_norm': '1375', 'learning_rate': '4.947e-05', 'epoch': '0.6164'}
+{'loss': '28.71', 'grad_norm': '968', 'learning_rate': '4.921e-05', 'epoch': '0.6849'}
+{'loss': '30.89', 'grad_norm': '1384', 'learning_rate': '4.89e-05', 'epoch': '0.7534'}
+{'loss': '27.54', 'grad_norm': '1496', 'learning_rate': '4.854e-05', 'epoch': '0.8219'}
+{'loss': '29.52', 'grad_norm': '943.6', 'learning_rate': '4.813e-05', 'epoch': '0.8904'}
+{'loss': '27.25', 'grad_norm': '1170', 'learning_rate': '4.767e-05', 'epoch': '0.9589'}
+{'eval_loss': '3.816', 'eval_balanced_accuracy': '0.08932', 'eval_macro_f1': '0.05065', 'eval_runtime': '53.01', 'eval_samples_per_second': '6.433', 'eval_steps_per_second': '1.622', 'epoch': '1'}
+{'loss': '27.43', 'grad_norm': '1217', 'learning_rate': '4.716e-05', 'epoch': '1.027'}
+{'loss': '25.38', 'grad_norm': '1186', 'learning_rate': '4.661e-05', 'epoch': '1.096'}
+{'loss': '20.05', 'grad_norm': '930.1', 'learning_rate': '4.601e-05', 'epoch': '1.164'}
+{'loss': '17.76', 'grad_norm': '1280', 'learning_rate': '4.537e-05', 'epoch': '1.233'}
+{'loss': '18.49', 'grad_norm': '1039', 'learning_rate': '4.469e-05', 'epoch': '1.301'}
+{'loss': '16.38', 'grad_norm': '905', 'learning_rate': '4.396e-05', 'epoch': '1.37'}
+{'loss': '18.98', 'grad_norm': '1105', 'learning_rate': '4.32e-05', 'epoch': '1.438'}
+{'loss': '14.56', 'grad_norm': '1092', 'learning_rate': '4.239e-05', 'epoch': '1.507'}
+{'loss': '17.91', 'grad_norm': '1331', 'learning_rate': '4.155e-05', 'epoch': '1.575'}
+{'loss': '15.11', 'grad_norm': '1155', 'learning_rate': '4.068e-05', 'epoch': '1.644'}
+{'loss': '14.97', 'grad_norm': '929.8', 'learning_rate': '3.977e-05', 'epoch': '1.712'}
+{'loss': '11.86', 'grad_norm': '751.5', 'learning_rate': '3.883e-05', 'epoch': '1.781'}
+{'loss': '13.86', 'grad_norm': '691.3', 'learning_rate': '3.786e-05', 'epoch': '1.849'}
+{'loss': '13', 'grad_norm': '924.9', 'learning_rate': '3.687e-05', 'epoch': '1.918'}
+{'loss': '13.75', 'grad_norm': '803.5', 'learning_rate': '3.585e-05', 'epoch': '1.986'}
+{'eval_loss': '2.102', 'eval_balanced_accuracy': '0.2874', 'eval_macro_f1': '0.2294', 'eval_runtime': '53.02', 'eval_samples_per_second': '6.432', 'eval_steps_per_second': '1.622', 'epoch': '2'}
+{'loss': '6.645', 'grad_norm': '641.8', 'learning_rate': '3.48e-05', 'epoch': '2.055'}
+{'loss': '6.579', 'grad_norm': '698', 'learning_rate': '3.374e-05', 'epoch': '2.123'}
+{'loss': '5.29', 'grad_norm': '415.2', 'learning_rate': '3.266e-05', 'epoch': '2.192'}
+{'loss': '4.269', 'grad_norm': '470.6', 'learning_rate': '3.156e-05', 'epoch': '2.26'}
+{'loss': '5.807', 'grad_norm': '412.4', 'learning_rate': '3.045e-05', 'epoch': '2.329'}
+{'loss': '6.171', 'grad_norm': '648.3', 'learning_rate': '2.933e-05', 'epoch': '2.397'}
+{'loss': '7.534', 'grad_norm': '599.8', 'learning_rate': '2.82e-05', 'epoch': '2.466'}
+{'loss': '5.476', 'grad_norm': '913.3', 'learning_rate': '2.706e-05', 'epoch': '2.534'}
+{'loss': '5.158', 'grad_norm': '285.6', 'learning_rate': '2.592e-05', 'epoch': '2.603'}
+{'loss': '5.073', 'grad_norm': '530.4', 'learning_rate': '2.477e-05', 'epoch': '2.671'}
+{'loss': '4.596', 'grad_norm': '911', 'learning_rate': '2.363e-05', 'epoch': '2.74'}
+{'loss': '5.575', 'grad_norm': '311.2', 'learning_rate': '2.249e-05', 'epoch': '2.808'}
+{'loss': '4.494', 'grad_norm': '352.9', 'learning_rate': '2.135e-05', 'epoch': '2.877'}
+{'loss': '3.779', 'grad_norm': '494.9', 'learning_rate': '2.022e-05', 'epoch': '2.945'}
+{'eval_loss': '1.789', 'eval_balanced_accuracy': '0.4762', 'eval_macro_f1': '0.4232', 'eval_runtime': '53.03', 'eval_samples_per_second': '6.431', 'eval_steps_per_second': '1.622', 'epoch': '3'}
+{'loss': '4.923', 'grad_norm': '81.08', 'learning_rate': '1.91e-05', 'epoch': '3.014'}
+{'loss': '1.214', 'grad_norm': '474', 'learning_rate': '1.8e-05', 'epoch': '3.082'}
+{'loss': '0.5716', 'grad_norm': '208', 'learning_rate': '1.691e-05', 'epoch': '3.151'}
+{'loss': '0.8237', 'grad_norm': '459.7', 'learning_rate': '1.583e-05', 'epoch': '3.219'}
+{'loss': '1.075', 'grad_norm': '180.5', 'learning_rate': '1.478e-05', 'epoch': '3.288'}
+{'loss': '0.6335', 'grad_norm': '26.96', 'learning_rate': '1.374e-05', 'epoch': '3.356'}
+{'loss': '0.2749', 'grad_norm': '59.93', 'learning_rate': '1.273e-05', 'epoch': '3.425'}
+{'loss': '0.9887', 'grad_norm': '100.5', 'learning_rate': '1.175e-05', 'epoch': '3.493'}
+{'loss': '0.4671', 'grad_norm': '84.52', 'learning_rate': '1.079e-05', 'epoch': '3.562'}
+{'loss': '0.5836', 'grad_norm': '44.03', 'learning_rate': '9.864e-06', 'epoch': '3.63'}
+{'loss': '1.325', 'grad_norm': '399.5', 'learning_rate': '8.969e-06', 'epoch': '3.699'}
+{'loss': '0.8661', 'grad_norm': '359.3', 'learning_rate': '8.108e-06', 'epoch': '3.767'}
+{'loss': '0.8844', 'grad_norm': '30.7', 'learning_rate': '7.282e-06', 'epoch': '3.836'}
+{'loss': '1.436', 'grad_norm': '480.4', 'learning_rate': '6.493e-06', 'epoch': '3.904'}
+{'loss': '1.116', 'grad_norm': '168.2', 'learning_rate': '5.743e-06', 'epoch': '3.973'}
+{'eval_loss': '2.176', 'eval_balanced_accuracy': '0.4686', 'eval_macro_f1': '0.4488', 'eval_runtime': '53.02', 'eval_samples_per_second': '6.432', 'eval_steps_per_second': '1.622', 'epoch': '4'}
+{'loss': '0.6127', 'grad_norm': '90.44', 'learning_rate': '5.033e-06', 'epoch': '4.041'}
+{'loss': '0.01646', 'grad_norm': '1.199', 'learning_rate': '4.366e-06', 'epoch': '4.11'}
+{'loss': '0.04732', 'grad_norm': '46.21', 'learning_rate': '3.741e-06', 'epoch': '4.178'}
+{'loss': '0.3018', 'grad_norm': '1.908', 'learning_rate': '3.161e-06', 'epoch': '4.247'}
+{'loss': '0.0619', 'grad_norm': '83.85', 'learning_rate': '2.627e-06', 'epoch': '4.315'}
+{'loss': '0.07772', 'grad_norm': '4.685', 'learning_rate': '2.14e-06', 'epoch': '4.384'}
+{'loss': '0.206', 'grad_norm': '8.345', 'learning_rate': '1.7e-06', 'epoch': '4.452'}
+{'loss': '0.06079', 'grad_norm': '5.386', 'learning_rate': '1.31e-06', 'epoch': '4.521'}
+{'loss': '0.036', 'grad_norm': '62.28', 'learning_rate': '9.692e-07', 'epoch': '4.589'}
+{'loss': '0.04622', 'grad_norm': '0.3487', 'learning_rate': '6.788e-07', 'epoch': '4.658'}
+{'loss': '0.09457', 'grad_norm': '31.32', 'learning_rate': '4.394e-07', 'epoch': '4.726'}
+{'loss': '0.02766', 'grad_norm': '0.5168', 'learning_rate': '2.515e-07', 'epoch': '4.795'}
+{'loss': '0.03417', 'grad_norm': '17.72', 'learning_rate': '1.155e-07', 'epoch': '4.863'}
+{'loss': '0.01743', 'grad_norm': '14.01', 'learning_rate': '3.171e-08', 'epoch': '4.932'}
+{'loss': '0.01685', 'grad_norm': '15.91', 'learning_rate': '2.622e-10', 'epoch': '5'}
+{'eval_loss': '2.332', 'eval_balanced_accuracy': '0.4808', 'eval_macro_f1': '0.445', 'eval_runtime': '53.02', 'eval_samples_per_second': '6.431', 'eval_steps_per_second': '1.622', 'epoch': '5'}
+{'train_runtime': '5000', 'train_samples_per_second': '2.335', 'train_steps_per_second': '0.146', 'train_loss': '17.44', 'epoch': '5'}
+[Данные] Тестовая выборка: data_test.csv (341 записей)

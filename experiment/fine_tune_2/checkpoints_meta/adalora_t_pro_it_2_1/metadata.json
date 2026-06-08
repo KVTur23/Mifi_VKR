@@ -1,0 +1,7 @@
+{
+  "method": "adalora",
+  "model_name": "t-tech/T-pro-it-2.1",
+  "run_key": "adalora_t_pro_it_2_1",
+  "trainable_params": 100852992,
+  "train_time_sec": 18517.76535511017
+}
