@@ -19,16 +19,21 @@ code/
 │   │   ├── model_qwen_3b.json             #   Qwen2.5-3B
 │   │   └── model_qwen_14b_unsloth.json    #   unsloth-вариант (legacy)
 │   ├── finetune_configs/                  # JSON-конфиги PEFT-экспериментов (один файл = один прогон)
-│   │   ├── qwen3_32b_qlora_cw.json        #   QLoRA r=16, class_weights ON
-│   │   ├── qwen3_32b_qlora_no_cw.json     #   QLoRA r=16, class_weights OFF
-│   │   ├── qwen3_32b_qlora_cw_r32.json    #   QLoRA r=32, class_weights ON
-│   │   ├── qwen3_32b_qlora_no_cw_r32.json #   QLoRA r=32, class_weights OFF
-│   │   ├── ruadapt_qwen3_32b_qlora_cw*    #   аналог для RuadaptQwen3-32B
-│   │   ├── vistral_24b_qlora_cw*          #   аналог для Vistral-24B
-│   │   ├── tpro_it_21_*                   #   T-pro-it-2.1 (qlora / adalora)
-│   │   ├── qwen3_14b_lora.json            #   LoRA r=16 на 14B
-│   │   ├── qwen3_14b_tinylora.json        #   tiny-LoRA
-│   │   └── qwen3_32b_adalora.json         #   AdaLoRA
+│   │   ├── qwen3_32b_qlora_cw.json         #   reaug-матрица: QLoRA r=16, class_weights ON
+│   │   ├── qwen3_32b_qlora_no_cw.json      #   reaug-матрица: QLoRA r=16, class_weights OFF
+│   │   ├── qwen3_32b_qlora_cw_r32.json     #   reaug-матрица: QLoRA r=32, class_weights ON
+│   │   ├── qwen3_32b_qlora_no_cw_r32.json  #   reaug-матрица: QLoRA r=32, class_weights OFF
+│   │   ├── ruadapt_qwen3_32b_qlora_cw*     #   аналог для RuadaptQwen3-32B (r=16 и r=32)
+│   │   ├── vistral_24b_qlora_cw*           #   аналог для Vistral-24B (r=16 и r=32)
+│   │   ├── tpro_it_21_{qlora,adalora}*     #   T-pro-it-2.1 (qlora / adalora, ± cw)
+│   │   ├── qwen3_32b_adalora{,_cw}.json    #   reaug: AdaLoRA для Qwen3-32B (± cw)
+│   │   ├── <model>_qlora_r16.json          #   reference-конфиг (r=16, без cw) для заведения новой модели
+│   │   ├── <model>_qlora_best_cw.json      #   отобранный лучший конфиг прогона (напр. yandexgpt_5_lite_8b)
+│   │   ├── <model>_<method>_iter{1,2,3}.json     #   итерационная матрица без cw
+│   │   ├── <model>_<method>_iter4_cw.json        #   итерационная матрица c class_weights
+│   │   └── ...                            #   модели: qwen25_32b, qwen3_14b, qwen3_32b,
+│   │                                      #     ruadapt_qwen3_32b, vikhr_nemo_12b,
+│   │                                      #     vistral_24b, yandexgpt_5_lite_8b
 │   └── pipeline_config.json               # GPU-профили + настройки этапов + finetune-таблица
 ├── prompts/
 │   ├── aug_prompts/                       # Промпты для аугментации
@@ -71,7 +76,12 @@ code/
 ├── scripts/
 │   ├── augmentation.py                    # CLI: полный аугментационный пайплайн (этапы 1-3 + метрики)
 │   ├── run_finetune.py                    # CLI: один PEFT-прогон по конфигу
-│   └── run_few_shot.py                    # CLI: матрица prompt-classification (модели × режимы)
+│   ├── run_few_shot.py                    # CLI: матрица prompt-classification (модели × режимы)
+│   └── slurm/                             # SLURM-обёртки для кластера:
+│                                          #   *_pre.sbatch  — подготовка окружения / прогрев кэша
+│                                          #   *_run.sbatch  — собственно прогон
+│                                          #   *_post.sbatch — выгрузка артефактов / очистка
+│                                          #   submit_*.sh   — оркестратор для пачки sbatch
 ├── notebooks/
 │   ├── augmentation.ipynb                 # Интерактивный прогон аугментации (Colab)
 │   ├── finetune.ipynb                     # Интерактивный fine-tune через CLI (Colab)
@@ -89,9 +99,10 @@ code/
 ├── results/
 │   ├── classification_results.csv         # Метрики традиционных классификаторов (baseline + augmented)
 │   ├── prompt_results.csv                 # Сводка prompt-classification (инкрементально)
-│   ├── preds_<model>_exp<k>.csv           # Per-sample предсказания few-shot
+│   ├── few_shot/                          # Per-sample предсказания few-shot:
+│   │   └── preds_<model>_exp<k>.csv       #   text, true_label, predicted_label, raw_response, skipped
 │   ├── finetune/<run_key>.json            # Один файл на PEFT-прогон с метриками
-│   ├── preds_<run_key>.csv                # Per-sample предсказания PEFT-прогона
+│   ├── preds_<run_key>.csv                # Per-sample предсказания PEFT-прогона (в корне results/)
 │   └── all_methods_comparison.csv         # Сводная таблица по всем методам
 ├── EDA/
 │   └── EDA.ipynb                          # Разведочный анализ
@@ -146,11 +157,13 @@ code/
 **тот же vLLM-движок** что и этап 1, но с отдельным `paraphrase_system_prompt` и шаблоном
 `paraphrase.txt` из конфига модели.
 
-Каждый парафраз сохраняется в паре с **его конкретным оригиналом** - чтобы потом (если
-включён судья) сравнивать именно эту пару, а не парафраз с произвольным письмом класса.
+Каждый парафраз сохраняется в паре с **его конкретным оригиналом** - чтобы судья
+сравнивал именно эту пару, а не парафраз с произвольным письмом класса.
 
-LLM-судья на этапе 2 **по умолчанию выключен** (`use_judge: false` в `pipeline_config.json`):
-фильтры валидации обычно достаточны, а судья на парафразах добавляет ~30-60s на батч.
+LLM-судья на этапе 2 **включён всегда** (отдельного флага `use_judge` для stage2
+нет — судья встроен в `select_top_paraphrases`). Порог отсечения — общий
+`MIN_JUDGE_SCORE = 5.0`. Это +30-60s на батч, но сильно режет каскадные искажения
+парафраза.
 
 ### Этап 3 - Обратный перевод ([`stage3_back_translation.py`](src/augmentation/stage3_back_translation.py))
 
@@ -186,33 +199,38 @@ LLM-судья на stage3 **по умолчанию выключен** (`use_ju
 Когда судья включён, тексты после фильтров оцениваются по шкале 1-10:
 
 - **Генерация** (`judge_score.txt`) - судья видит несколько примеров класса + описание
-  класса, оценивает естественность, связность, соответствие классу. Порог по умолчанию 5.0.
+  класса, оценивает естественность, связность, соответствие классу. Порог `MIN_JUDGE_SCORE = 5.0`.
 - **Парафраз** (`judge_paraphrase.txt`) - судья сравнивает парафраз с конкретным оригиналом,
-  оценивает сохранение смысла и переформулировку. Порог по умолчанию 4.5.
-- **Обратный перевод** (тот же `judge_paraphrase.txt`) - порог 2.5 (NLLB неизбежно теряет
-  качество, поэтому планка ниже).
+  оценивает сохранение смысла и переформулировку. Тот же порог `5.0`.
+- **Обратный перевод** (тот же `judge_paraphrase.txt`) - порог `min_judge_score = 2.5`
+  (NLLB неизбежно теряет качество, планка ниже).
 
-По умолчанию судья включён только на этапе 1 (там он реально помогает отсеивать
-"галлюцинированные" письма). На этапах 2 и 3 - выключен.
+По умолчанию судья включён на этапах 1 и 2 (там он реально помогает отсеивать
+"галлюцинированные" письма и каскадные искажения парафраза) и **выключен** на этапе 3
+через `stage3.use_judge: false` в `pipeline_config.json` - на NLLB-выходах он стабильно
+занижает оценки и режет ~92% и так чистого пула.
 
 ### Валидация ([`validation.py`](src/augmentation/validation.py))
 
-Все сгенерированные тексты проходят 7 фильтров (от дешёвых к дорогим):
+Все сгенерированные тексты проходят 7 фильтров (от дешёвых к дорогим), порядок —
+ровно как в `validate_generated_texts`:
 
-1. **Точные дубликаты** - совпадения с существующими и между собой
-2. **Минимальная длина** - короче `validation_min_text_length` символов (250 для парафраза/
-   BT, 500 в общих настройках)
-3. **Доля от длины оригинала** - для парафраза/BT: текст не должен быть короче `min_length_ratio`
-   от длины источника (защита от "обрезанных" ответов модели)
-4. **Язык** - не-русский отсеивается через `langdetect`
-5. **Вырожденность** - повторяющиеся слова / фразы (модель зациклилась)
-6. **CJK-символы** - артефакт Qwen-моделей; иероглифы → отброс
-7. **Косинусное сходство** - SBERT (`ai-forever/sbert_large_nlu_ru`) против всех
-   существующих текстов класса. Порог сужающийся (см. выше).
-
-Также есть опциональный **prompt-leak filter** (мета-фразы, Markdown-разметка, фрагменты
-промпта) - по умолчанию выключен в этапах 2/3, потому что система-промпт этапа 1 уже
-прямо запрещает Markdown.
+1. **Точные дубликаты** - совпадения с существующими текстами класса и между собой
+   (сравнение по `strip().lower()`)
+2. **Минимальная длина** - короче `validation.min_text_length` символов (по умолчанию 500;
+   медиана оригинала ~1255)
+3. **Язык** - не-русский отсеивается через `langdetect`
+4. **Вырожденность** - доля уникальных слов < 0.2 или подряд повторяющаяся фраза (3+ слов
+   × 3 раза) - модель «залипла»
+5. **CJK-символы** - артефакт Qwen-моделей; иероглифы → отброс
+6. **Промпт-утечка** - мета-фразы («Конечно,», «Вот пример…»), фрагменты системного
+   промпта (`напиши одно письмо`, `[PERSON] - имя`), Markdown-разметка, NER-токены
+   `[НАЗВАНИЕ_КОМПАНИИ]`. Фильтр **всегда включён** в цепочке валидации
+7. **Косинусное сходство** - SBERT (`ai-forever/sbert_large_nlu_ru`, на CPU) против всех
+   существующих текстов класса. Порог **двусторонний**: верхний (по умолчанию `0.95`,
+   `0.98` для классов с 1 оригиналом) отсекает почти-копии, нижний `0.5` —
+   тексты, исказившиеся до неузнаваемости (актуально после NLLB). Верхний порог
+   сужающийся (см. ниже).
 
 ### GPU-профили
 
@@ -222,7 +240,7 @@ LLM-судья на stage3 **по умолчанию выключен** (`use_ju
 |-----------------------|-----------|-----------|---------|----------------|
 | NLLB модель           | 600M      | 600M      | 3.3B    | 3.3B           |
 | NLLB batch size       | 32        | 32        | 64      | 64             |
-| GPU memory util       | 0.90      | 0.90      | 0.92    | 0.95           |
+| GPU memory util       | 0.90      | 0.90      | 0.88    | 0.95           |
 | enforce_eager (vLLM)  | true      | true      | true    | true           |
 
 Конфигурация одной строкой при запуске: `--gpu A100_40` (для CLI) или `GPU = 'A100_40'`
@@ -451,20 +469,46 @@ checkpoint'а на диске, но best всегда защищён HF Trainer'
 
 ### Готовые эксперимент-конфиги
 
+Две накладывающиеся семьи конфигов:
+
+**1. reaug-матрица (для Qwen3-32B / Ruadapt / Vistral / T-pro):** 4 варианта QLoRA
+× {r=16, r=32} × {class_weights ON / OFF}.
+
 | Конфиг | Модель | r | lora_alpha | class_weights |
 |--------|--------|---|------------|---------------|
-| `qwen3_32b_qlora_cw.json`         | Qwen3-32B | 16 | 32 | ON  |
-| `qwen3_32b_qlora_no_cw.json`      | Qwen3-32B | 16 | 32 | OFF |
-| `qwen3_32b_qlora_cw_r32.json`     | Qwen3-32B | 32 | 64 | ON  |
-| `qwen3_32b_qlora_no_cw_r32.json`  | Qwen3-32B | 32 | 64 | OFF |
-| `ruadapt_qwen3_32b_qlora_cw*`     | RuadaptQwen3-32B | 16/32 | 32/64 | ON |
-| `vistral_24b_qlora_cw*`           | Vistral-24B | 16/32 | 32/64 | ON |
-| `tpro_it_21_qlora.json`           | T-pro-it-2.1 | 16 | 32 | OFF (legacy) |
-| `qwen3_14b_lora.json`             | Qwen3-14B | 16 | 32 | OFF (legacy) |
+| `qwen3_32b_qlora_cw.json`            | Qwen3-32B        | 16 | 32 | ON  |
+| `qwen3_32b_qlora_no_cw.json`         | Qwen3-32B        | 16 | 32 | OFF |
+| `qwen3_32b_qlora_cw_r32.json`        | Qwen3-32B        | 32 | 64 | ON  |
+| `qwen3_32b_qlora_no_cw_r32.json`     | Qwen3-32B        | 32 | 64 | OFF |
+| `ruadapt_qwen3_32b_qlora_cw*`        | RuadaptQwen3-32B | 16/32 | 32/64 | ON |
+| `vistral_24b_qlora_cw*`              | Vistral-24B      | 16/32 | 32/64 | ON |
+| `tpro_it_21_{qlora,adalora}{,_cw}`   | T-pro-it-2.1     | 16/32 | 32/64 | ON/OFF |
+| `qwen3_32b_adalora{,_cw}.json`       | Qwen3-32B        | —  | 32 | OFF/ON |
 
-Базовые `*_qlora.json` без суффикса - "сырые" конфиги без `use_class_weights`/`val_split`,
-от которых исторически наследовались эксперимент-конфиги. Сейчас они используются только
-как референс при добавлении новой модели в матрицу.
+Помимо матрицы лежат «опорные» конфиги, не привязанные к конкретному
+прогону: `<model>_qlora_r16.json` — reference (r=16, без cw), от него
+заводится новая модель; `<model>_qlora_best_cw.json` — отобранный лучший
+конфиг по итогам анализа (с `use_class_weights`/`val_split`), например
+`yandexgpt_5_lite_8b_qlora_best_cw.json`.
+
+**2. Итерационная матрица `iter1...iter4_cw`:** 4 круга PEFT-методов
+(`qlora`, `lora`, `adalora`, `tinylora`) на разных моделях, последний круг — с
+`class_weights ON`. Имя файла: `<model>_<method>_iter<N>.json`.
+
+| Модель | Методы | Прогоны |
+|--------|--------|---------|
+| `qwen25_32b`             | qlora, adalora                 | iter1..iter4_cw |
+| `qwen3_14b`              | qlora, lora, adalora, tinylora | iter1..iter4_cw |
+| `qwen3_32b`              | qlora, adalora                 | iter4_cw        |
+| `ruadapt_qwen3_32b`      | qlora, adalora                 | iter1..iter4_cw |
+| `vikhr_nemo_12b`         | qlora, lora, adalora, tinylora | iter1..iter4_cw |
+| `vistral_24b`            | qlora, adalora                 | iter1..iter4_cw |
+| `yandexgpt_5_lite_8b`    | qlora, lora, adalora, tinylora | iter1..iter4_cw |
+
+Базовые `*_qlora.json` / `*_lora.json` / `*_adalora.json` / `*_tinylora.json` без
+суффикса - "сырые" конфиги без `use_class_weights`/`val_split`, от которых
+исторически наследовались эксперимент-конфиги. Сейчас используются как референс
+при добавлении новой модели в матрицу.
 
 ---
 
