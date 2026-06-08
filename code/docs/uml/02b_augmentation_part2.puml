@@ -1,0 +1,58 @@
+@startuml augmentation_part2
+title Часть 2: этапы 2–3 (парафраз и обратный перевод) и финальная оценка
+
+skinparam dpi 200
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam defaultFontSize 15
+skinparam ActivityBackgroundColor #F5F5F5
+skinparam ActivityBorderColor #555555
+skinparam ActivityFontSize 15
+skinparam ActivityDiamondFontSize 14
+skinparam ArrowColor #444444
+skinparam ArrowFontSize 13
+skinparam NoteBackgroundColor #FFF8E1
+skinparam NoteBorderColor #C0A050
+skinparam NoteFontSize 13
+
+' === красивая рамка для заголовков этапов (swimlanes) ===
+skinparam SwimlaneTitleFontStyle bold
+skinparam SwimlaneTitleFontSize 18
+skinparam SwimlaneTitleFontColor #1F3A5F
+skinparam SwimlaneTitleBackgroundColor #DCE6F2
+skinparam SwimlaneBorderColor #1F3A5F
+skinparam SwimlaneBorderThickness 2
+
+|Этап 2 — Парафраз (<35 → 35)|
+start
+note right #E3F2FD
+  Продолжение части 1:
+  вход — data_after_stage1.csv
+end note
+:Тот же vLLM,\nно paraphrase_template;
+:Источники парафраза —\n**оригиналы** из train_after_eda.csv\n(без каскада со stage1);
+while (есть классы с count < 35?) is (да)
+    :Парафраз батчем\n(пара парафраз ↔ оригинал);
+    :Валидация (7 фильтров);
+    :LLM-судья на парах\n(порог MIN_JUDGE_SCORE = 5.0);
+endwhile (нет)
+:save **data_after_stage2.csv**;
+
+|Этап 3 — Обратный перевод (<50 → 50)|
+:Загрузка NLLB-200\n(600M или 3.3B по GPU-профилю);
+while (есть классы с count < 50?) is (да)
+    :RU → en / de / fr → RU\nчерез NLLB;
+    :Валидация (7 фильтров);
+    :Без судьи (use_judge = false):\nrandom.shuffle\nи берём первые n_needed;
+    :Прогрессивное ослабление\nкосинусного порога\n(step 0.10 на круг);
+endwhile (нет)
+:save **data_after_stage3.csv**;
+
+|Финальная оценка|
+:Обучение тех же 5 классификаторов\nна аугментированном train;
+:Оценка на data_test.csv;
+:Запись в **classification_results.csv**\n(строки augmented рядом с baseline);
+:Сводная таблица:\n**results/all_methods_comparison.csv**\n(traditional + prompt + finetune);
+stop
+
+@enduml

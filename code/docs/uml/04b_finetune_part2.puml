@@ -1,0 +1,88 @@
+@startuml finetune_part2
+title Workflow PEFT fine-tune — Часть 2: train(), evaluate(), save()
+
+skinparam dpi 200
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam defaultFontSize 15
+skinparam ActivityBackgroundColor #F5F5F5
+skinparam ActivityBorderColor #555555
+skinparam ActivityFontSize 15
+skinparam ActivityDiamondFontSize 14
+skinparam ArrowColor #444444
+skinparam ArrowFontSize 13
+skinparam NoteBackgroundColor #FFF8E1
+skinparam NoteBorderColor #C0A050
+skinparam NoteFontSize 13
+
+skinparam PartitionBorderColor #1F3A5F
+skinparam PartitionBorderThickness 2
+skinparam PartitionBackgroundColor #DCE6F2
+skinparam PartitionFontStyle bold
+skinparam PartitionFontSize 18
+skinparam PartitionFontColor #1F3A5F
+
+skinparam LegendBackgroundColor #E3F2FD
+skinparam LegendBorderColor #1F3A5F
+skinparam LegendFontSize 13
+
+start
+:Вход: подготовленные **train_ds, eval_ds,\nself.model (PeftModel)**\n— см. часть 1;
+
+partition "train() — выбор Trainer'а" {
+    if (use_class_weights = true?) then (да)
+        :**ClassWeightedTrainer**\nCrossEntropyLoss(weight = class_weights);
+    else (нет)
+        :HuggingFace **Trainer**\n(стандартный loss);
+    endif
+    if (eval_test_each_epoch = true?) then (да)
+        :Подключить **TestEvalCallback**\n→ per-epoch test eval\n→ test_curve.csv;
+        note right
+          Не влияет на выбор best-checkpoint
+          (best всё равно по eval_macro_f1 на val).
+          Только диагностика траектории.
+        end note
+    else (нет)
+    endif
+    :**EarlyStoppingCallback**\npatience = 2 по eval_macro_f1;
+}
+
+partition "train() — цикл обучения" {
+    :trainer.train()\nдля каждой эпохи:;
+    :→ обучение на train_ds\n(batch, grad accumulation);
+    :→ eval на eval_ds (val):\nloss, macro_f1, balanced_acc;
+    if (macro_f1 улучшился?) then (да)
+        :Сохранение checkpoint\n(save_total_limit = 2);
+    else (нет, 2 эпохи подряд)
+        :Early stopping\n→ выход из цикла;
+    endif
+    :load_best_model_at_end = True\n→ final model = best checkpoint;
+}
+
+partition "evaluate() — финальные метрики на test" {
+    :evaluate_finetuned.evaluate()\n→ inference на df_test\n→ predicted_label на 341 пример;
+    :Расчёт метрик:\nbalanced_accuracy, macro_f1,\nf1_group_{A, B, C},\ntrainable_params, train_time_sec;
+}
+
+partition "save() — артефакты прогона" {
+    :**save_adapter()**\nData/finetune_checkpoints/<run_key>/\n(adapter_model.safetensors,\nadapter_config.json, id2label.json,\nclass_groups.json, tokenizer*,\nmetadata.json);
+    :Запись агрегированного результата\n**results/finetune/<run_key>.json**\n(перезаписывает при повторе);
+    :Per-sample предсказания\n**results/preds_<run_key>.csv**\n(text, true_label,\npredicted_label, correct);
+}
+
+stop
+
+legend right
+  **Артефакты на выходе:**
+
+  • Data/finetune_checkpoints/<run_key>/
+      — PEFT-адаптер (10-100 МБ)
+
+  • results/finetune/<run_key>.json
+      — одна строка для сводной таблицы
+
+  • results/preds_<run_key>.csv
+      — построчные предсказания для разбора ошибок
+end legend
+
+@enduml

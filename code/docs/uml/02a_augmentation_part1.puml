@@ -1,0 +1,65 @@
+@startuml augmentation_part1
+title Часть 1: предобработка, baseline-метрики и этап 1 (LLM-генерация)
+
+skinparam dpi 200
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam defaultFontSize 15
+skinparam ActivityBackgroundColor #F5F5F5
+skinparam ActivityBorderColor #555555
+skinparam ActivityFontSize 15
+skinparam ActivityDiamondFontSize 14
+skinparam ArrowColor #444444
+skinparam ArrowFontSize 13
+skinparam NoteBackgroundColor #FFF8E1
+skinparam NoteBorderColor #C0A050
+skinparam NoteFontSize 13
+
+' === красивая рамка для заголовков этапов (swimlanes) ===
+skinparam SwimlaneTitleFontStyle bold
+skinparam SwimlaneTitleFontSize 18
+skinparam SwimlaneTitleFontColor #1F3A5F
+skinparam SwimlaneTitleBackgroundColor #DCE6F2
+skinparam SwimlaneBorderColor #1F3A5F
+skinparam SwimlaneBorderThickness 2
+
+|Предобработка|
+start
+:Чтение **data.json**\n(сырые письма);
+:**data_cleaner.run()**:\nдубликаты, приложения,\nповторы фраз/предложений;
+note right
+  data.json
+  → data_after_eda.csv
+end note
+:Стратифицированный\ntrain / test split 80 / 20;
+note right
+  train_after_eda.csv → аугментируется
+  data_test.csv → held out
+end note
+
+|Baseline-метрики|
+:Обучение на оригинальном train:\nLinearSVC, LogReg, NB,\nrubert-tiny2, rubert-base;
+:Оценка на data_test.csv\n→ classification_results.csv\n(строки baseline);
+
+|Этап 1 — LLM-генерация (<15 → 15)|
+:Загрузка vLLM из конфига\n(model_vllm_32b.json и т.п.);
+:**generate_class_context**\nдля каждого класса\n(кэш в class_descriptions.json);
+while (есть классы с count < 15?) is (да)
+    :Генерация ×\nOVERSAMPLE_FACTOR = 5;
+    :Валидация (7 фильтров);
+    :LLM-судья\n(порог MIN_JUDGE_SCORE = 5.0);
+    if (нужное количество\nнабрано?) then (да)
+    else (нет)
+        :retry до MAX_RETRIES = 5,\nослабляя порог сходства\n(шаг 0.01, потолок 0.98);
+    endif
+endwhile (нет)
+:save **data_after_stage1.csv**;
+
+note right #E3F2FD
+  Продолжение — на части 2:
+  этапы 2–3 и финальная оценка
+end note
+
+stop
+
+@enduml

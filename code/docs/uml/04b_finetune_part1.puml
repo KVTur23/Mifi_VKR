@@ -1,0 +1,67 @@
+@startuml finetune_part1
+title  Инициализация и подготовка
+
+skinparam dpi 200
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam defaultFontSize 15
+skinparam ActivityBackgroundColor #F5F5F5
+skinparam ActivityBorderColor #555555
+skinparam ActivityFontSize 15
+skinparam ActivityDiamondFontSize 14
+skinparam ArrowColor #444444
+skinparam ArrowFontSize 13
+skinparam NoteBackgroundColor #FFF8E1
+skinparam NoteBorderColor #C0A050
+skinparam NoteFontSize 13
+
+skinparam PartitionBorderColor #1F3A5F
+skinparam PartitionBorderThickness 2
+skinparam PartitionBackgroundColor #DCE6F2
+skinparam PartitionFontStyle bold
+skinparam PartitionFontSize 18
+skinparam PartitionFontColor #1F3A5F
+
+skinparam LegendBackgroundColor #E3F2FD
+skinparam LegendBorderColor #1F3A5F
+skinparam LegendFontSize 13
+
+start
+:**CLI:**\npython scripts/run_finetune.py\n  --config <name>.json\n  --gpu <profile>;
+
+partition "Инициализация SeqClsRunner" {
+    :Чтение JSON-конфига модели\n(method, model_name, peft_config,\ntraining_params, num_labels, ...);
+    :Наложение GPU-профиля\nповерх training_params\n(per_device_batch, grad_accum,\nmax_seq, bf16 / fp16);
+    
+}
+
+partition "prepare() — подготовка данных" {
+    :load_finetune_data()\n→ df_train, df_test, orig_counts;
+    :build_label_mapping(df_train)\n→ label2id, id2label, num_labels = 36;
+    :compute_class_groups()\n→ группа A / B / C\n(по числу оригиналов:\nA ≥ 50, B 15-49, C < 15);
+    if (use_class_weights = true?) then (да)
+        :compute_class_weights()\nформула sklearn-balanced:\nw[c] = n_total / (n_classes · count[c]);
+    else (нет)
+        :class_weights = None;
+    endif
+    :Stratified train / val split\n(val_split = 0.10 по умолчанию);
+    note right
+      val отрезается от
+      **аугментированного train**.
+      df_test НЕ участвует
+      в выборе чекпоинта
+      (только в финальном eval).
+    end note
+}
+
+partition "prepare() — загрузка модели и токенизация" {
+    :**load_base_model()**\nbase модель +\nBitsAndBytesConfig для QLoRA\n(NF4, double quant);
+    :**build_peft_config()**\nLoraConfig / AdaLoraConfig\n(r, lora_alpha,\ntarget_modules, dropout);
+    :**wrap_with_peft()**\n→ self.model — PeftModel;
+    :tokenize_dataset(max_seq_length)\n→ train_ds, eval_ds;
+}
+
+stop
+
+
+@enduml
